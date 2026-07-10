@@ -11,8 +11,8 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 
-import { SignupDto } from './dto/create-auth.dto';
-import { User, UserDocument, UserRole } from '../schema/user.schema';
+import { SignupDto } from './dto/signup.dto';
+import { User, UserDocument, UserRole } from './schema/user.schema';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 @Injectable()
@@ -208,6 +208,7 @@ export class AuthService {
 
     // Update user
     user.password = hashedPassword;
+
     user.refreshToken = null; // Logout all devices
     user.lastPasswordChanged = new Date();
 

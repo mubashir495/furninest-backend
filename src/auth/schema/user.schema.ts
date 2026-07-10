@@ -53,46 +53,50 @@ export class User {
   })
   isEmailVerified: boolean;
 
+ @Prop({
+  type: String,
+  default: null,
+})
+refreshToken: string | null;
+
   @Prop({
+    type: String,
     default: null,
     select: false,
   })
-  refreshToken: string | null;
+  emailVerificationToken?: string;
 
   @Prop({
+    type: Date,
+    default: null,
+  })
+  emailVerificationExpires?: Date;
+
+  @Prop({
+    type: String,
     default: null,
     select: false,
   })
-  emailVerificationToken: string | null;
+  passwordResetToken?: string;
 
   @Prop({
+    type: Date,
     default: null,
   })
-  emailVerificationExpires: Date | null;
+  passwordResetExpires?: Date;
 
   @Prop({
+    type: Date,
     default: null,
-    select: false,
   })
-  passwordResetToken: string | null;
+  lastLogin?: Date;
 
   @Prop({
+    type: Date,
     default: null,
   })
-  passwordResetExpires: Date | null;
-
-  @Prop({
-    default: null,
-  })
-  lastLogin: Date | null;
-
-  @Prop({
-    default: null,
-  })
-  lastPasswordChanged: Date | null;
+  lastPasswordChanged?: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
-
-// Create unique index
-UserSchema.index({ email: 1 }, { unique: true });
+   
