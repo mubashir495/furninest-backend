@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ExpressAdapter } from '@nestjs/platform-express';
 import { AppModule } from '../src/app.module';
+
 import express from 'express';
 import serverlessExpress from '@codegenie/serverless-express';
 
@@ -17,7 +18,9 @@ async function bootstrap() {
 
     await app.init();
 
-    server = serverlessExpress({ app: expressApp });
+    server = serverlessExpress({
+      app: expressApp,
+    });
   }
 
   return server;
