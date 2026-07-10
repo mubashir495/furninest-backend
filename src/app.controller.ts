@@ -7,6 +7,6 @@ export class AppController {
 
   @Get()
   getHello(): string {
-    return this.appService.getHello();
+    return '🚀 FurniNest Backend API is running!';
   }
 }

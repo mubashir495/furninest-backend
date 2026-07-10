@@ -42,4 +42,15 @@ export class AuthController {
   profile(@Req() req) {
     return this.authService.profile(req.user.id);
   }
+ 
+  @Get('health')
+health() {
+  return {
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV,
+    mongodb: process.env.MONGODB_URI ? 'Configured' : 'Not configured',
+    message: 'FurniNest Auth API is running!'
+  };
+}
 }
