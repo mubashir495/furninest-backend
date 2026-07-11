@@ -1,102 +1,48 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument } from 'mongoose';
-
-export type UserDocument = HydratedDocument<User>;
+import { Document } from 'mongoose';
 
 export enum UserRole {
-  CUSTOMER = 'CUSTOMER',
   ADMIN = 'ADMIN',
-  SUPER_ADMIN = 'SUPER_ADMIN',
+  SELLER = 'SELLER',
+  CUSTOMER = 'CUSTOMER',
 }
 
-@Schema({
-  timestamps: true,
-  versionKey: false,
-})
+export type UserDocument = User & Document;
+
+@Schema({ timestamps: true })
 export class User {
-  @Prop({
-    required: true,
-    trim: true,
-    minlength: 2,
-    maxlength: 100,
-  })
+  @Prop({ required: true, trim: true })
   fullName: string;
 
-  @Prop({
-    required: true,
-    unique: true,
-    lowercase: true,
-    trim: true,
-  })
+  @Prop({ required: true, unique: true, lowercase: true, trim: true, index: true })
   email: string;
 
-  @Prop({
-    required: true,
-    select: false,
-  })
+  @Prop({ required: true, select: false })
   password: string;
 
-  @Prop({
-    type: String,
-    enum: UserRole,
-    default: UserRole.CUSTOMER,
-  })
+  @Prop({ type: String, enum: UserRole, default: UserRole.CUSTOMER })
   role: UserRole;
 
-  @Prop({
-    default: true,
-  })
+  @Prop({ default: true })
   isActive: boolean;
 
-  @Prop({
-    default: false,
-  })
+  @Prop({ default: false })
   isEmailVerified: boolean;
 
- @Prop({
-  type: String,
-  default: null,
-})
-refreshToken: string | null;
-
-  @Prop({
-    type: String,
-    default: null,
-    select: false,
-  })
+  @Prop({ select: false })
   emailVerificationToken?: string;
 
-  @Prop({
-    type: Date,
-    default: null,
-  })
+  @Prop({ select: false })
   emailVerificationExpires?: Date;
 
-  @Prop({
-    type: String,
-    default: null,
-    select: false,
-  })
-  passwordResetToken?: string;
+  @Prop({ type: String, default: null, select: false })
+  refreshToken?: string | null;
 
-  @Prop({
-    type: Date,
-    default: null,
-  })
-  passwordResetExpires?: Date;
-
-  @Prop({
-    type: Date,
-    default: null,
-  })
+  @Prop()
   lastLogin?: Date;
 
-  @Prop({
-    type: Date,
-    default: null,
-  })
+  @Prop()
   lastPasswordChanged?: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
-   
