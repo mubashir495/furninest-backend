@@ -35,6 +35,12 @@ export class User {
   @Prop({ select: false })
   emailVerificationExpires?: Date;
 
+  @Prop({ select: false })
+  passwordResetToken?: string;
+
+  @Prop({ select: false })
+  passwordResetExpires?: Date;
+
   @Prop({ type: String, default: null, select: false })
   refreshToken?: string | null;
 

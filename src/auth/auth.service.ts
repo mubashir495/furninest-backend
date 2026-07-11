@@ -18,6 +18,8 @@ import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { MailService } from '../mail/mail.service';
 
 function hashToken(token: string): string {
@@ -33,24 +35,24 @@ export class AuthService {
     private readonly mailService: MailService,
   ) {}
 
- private async issueTokens(user: UserDocument) {
-  const payload = { sub: user._id, email: user.email, role: user.role };
+  private async issueTokens(user: UserDocument) {
+    const payload = { sub: user._id, email: user.email, role: user.role };
 
-  const accessToken = await this.jwtService.signAsync(payload, {
-    secret: process.env.JWT_ACCESS_SECRET,
-    expiresIn: (process.env.JWT_ACCESS_EXPIRES_IN ?? '15m') as any,
-  });
+    const accessToken = await this.jwtService.signAsync(payload, {
+      secret: process.env.JWT_ACCESS_SECRET,
+      expiresIn: (process.env.JWT_ACCESS_EXPIRES_IN ?? '15m') as any,
+    });
 
-  const refreshToken = await this.jwtService.signAsync(payload, {
-    secret: process.env.JWT_REFRESH_SECRET,
-    expiresIn: (process.env.JWT_REFRESH_EXPIRES_IN ?? '7d') as any,
-  });
+    const refreshToken = await this.jwtService.signAsync(payload, {
+      secret: process.env.JWT_REFRESH_SECRET,
+      expiresIn: (process.env.JWT_REFRESH_EXPIRES_IN ?? '7d') as any,
+    });
 
-  user.refreshToken = await bcrypt.hash(refreshToken, 12);
-  await user.save();
+    user.refreshToken = await bcrypt.hash(refreshToken, 12);
+    await user.save();
 
-  return { accessToken, refreshToken };
-}
+    return { accessToken, refreshToken };
+  }
 
   private async issueVerificationToken(user: UserDocument) {
     const rawToken = crypto.randomBytes(32).toString('hex');
@@ -126,7 +128,6 @@ export class AuthService {
   async resendVerification(dto: ResendVerificationDto) {
     const user = await this.userModel.findOne({ email: dto.email.toLowerCase() });
 
-    // Don't reveal whether the email exists in our system
     const genericResponse = {
       success: true,
       message: 'If an account exists and is unverified, a new verification email has been sent.',
@@ -138,6 +139,53 @@ export class AuthService {
     await this.mailService.sendVerificationEmail(user.email, user.fullName, rawToken);
 
     return genericResponse;
+  }
+
+  async forgotPassword(dto: ForgotPasswordDto) {
+    const user = await this.userModel.findOne({ email: dto.email.toLowerCase() });
+
+    // Same message regardless - don't reveal whether the email is registered
+    const genericResponse = {
+      success: true,
+      message: 'If an account with that email exists, a reset link has been sent.',
+    };
+
+    if (!user) return genericResponse;
+
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    user.passwordResetToken = hashToken(rawToken);
+    user.passwordResetExpires = new Date(Date.now() + 15 * 60 * 1000);
+    await user.save();
+
+    await this.mailService.sendPasswordResetEmail(user.email, user.fullName, rawToken);
+
+    return genericResponse;
+  }
+
+  async resetPassword(dto: ResetPasswordDto) {
+    const tokenHash = hashToken(dto.token);
+
+    const user = await this.userModel
+      .findOne({
+        passwordResetToken: tokenHash,
+        passwordResetExpires: { $gt: new Date() },
+      })
+      .select('+password');
+
+    if (!user) {
+      throw new BadRequestException('Reset link is invalid or has expired.');
+    }
+
+    user.password = await bcrypt.hash(dto.newPassword, 12);
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
+    user.refreshToken = null; // force re-login everywhere
+    await user.save();
+
+    return {
+      success: true,
+      message: 'Password reset successful. Please log in with your new password.',
+    };
   }
 
   async login(loginDto: LoginDto) {
