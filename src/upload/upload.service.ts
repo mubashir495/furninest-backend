@@ -3,8 +3,10 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { v4 as uuid } from 'uuid';
+import { randomUUID } from 'crypto';
 import { SupabaseService } from '../supabase/supabase.service';
+
+const fileName = randomUUID();
 
 @Injectable()
 export class UploadService {
@@ -26,8 +28,7 @@ export class UploadService {
 
     const extension = file.originalname.split('.').pop();
 
-    const fileName = `${folder}/${uuid()}.${extension}`;
-
+    const fileName = `${folder}/${randomUUID()}.${extension}`;
     const bucket =
       this.configService.get<string>('SUPABASE_BUCKET');
 
