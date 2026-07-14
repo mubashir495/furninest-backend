@@ -10,6 +10,7 @@ import {
   MaxLength,
   IsBoolean,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateProductDto {
   @IsString()
@@ -26,32 +27,35 @@ export class CreateProductDto {
   @IsNotEmpty()
   longDescription: string;
 
+  @Type(() => Number)
   @IsNumber()
   @Min(0)
   price: number;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber()
   @Min(0)
   @Max(100)
   discount?: number;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber()
   @Min(0)
   stock?: number;
 
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  images?: string[];
-
-  @IsMongoId({ message: 'subCategory must be a valid subcategory id' })
+  @IsMongoId({
+    message: 'subCategory must be a valid subcategory id',
+  })
   subCategory: string;
 
   @IsOptional()
   @IsArray()
-  @IsMongoId({ each: true, message: 'each suggestionItem must be a valid product id' })
+  @IsMongoId({
+    each: true,
+    message: 'each suggestionItem must be a valid product id',
+  })
   suggestionItems?: string[];
 
   @IsOptional()

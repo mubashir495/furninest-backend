@@ -10,11 +10,15 @@ import { CategoryModule } from './category/category.module';
 
 import {  SubCategoryModule } from './subcategory/subcategory.module';
 import { ProductModule } from './product/product.module';
+import { SupabaseModule } from './supabase/supabase.module';
+import { UploadService } from './upload/upload.service';
+import { UploadModule } from './upload/upload.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: '.env',
     }),
     MongooseModule.forRootAsync({
       inject: [ConfigService],
@@ -54,11 +58,14 @@ import { ProductModule } from './product/product.module';
     CategoryModule,
     SubCategoryModule,
     ProductModule,
+    SupabaseModule,
+    UploadModule,
   ],
   controllers: [AppController],
   providers: [
     AppService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    UploadService,
   ],
 })
 export class AppModule {}

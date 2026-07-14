@@ -7,19 +7,26 @@ import {
   Body,
   Param,
   UseGuards,
+  UseInterceptors,
+  UploadedFiles,
 } from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
+
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+
 import { JwtAuthGuard } from '../auth/guards/jwt-auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+
+import { multerOptions } from '../common/multer/multer.config';
 
 @Controller('products')
 export class ProductController {
   constructor(private readonly productService: ProductService) {}
 
-  // ---------- Public routes ----------
+  // ---------- Public Routes ----------
 
   @Get()
   findAll() {
@@ -51,20 +58,33 @@ export class ProductController {
     return this.productService.findOne(id);
   }
 
-  // ---------- Admin-only routes ----------
+  // ---------- Admin Routes ----------
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   @Post()
-  create(@Body() dto: CreateProductDto) {
-    return this.productService.create(dto);
+  @UseInterceptors(
+    FilesInterceptor('images', 10, multerOptions),
+  )
+  create(
+    @Body() dto: CreateProductDto,
+    @UploadedFiles() files: Express.Multer.File[],
+  ) {
+    return this.productService.create(dto, files);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateProductDto) {
-    return this.productService.update(id, dto);
+  @UseInterceptors(
+    FilesInterceptor('images', 10, multerOptions),
+  )
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateProductDto,
+    @UploadedFiles() files: Express.Multer.File[],
+  ) {
+    return this.productService.update(id, dto, files);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

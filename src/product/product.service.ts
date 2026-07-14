@@ -2,8 +2,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Model, Types } from 'mongoose';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
 import { Product, ProductDocument } from './schema/product.schema';
 import { Category, CategoryDocument } from '../category/schema/category.schema';
 import {
@@ -13,18 +13,24 @@ import {
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { slugify } from '../common/utils/slugify';
-
+import { UploadService } from '../upload/upload.service';
 const PUBLIC_FIELDS =
   'name slug shortDescription longDescription price discount stock images category subCategory isActive created_date updated_date';
 
 @Injectable()
 export class ProductService {
   constructor(
-    @InjectModel(Product.name) private readonly productModel: Model<ProductDocument>,
-    @InjectModel(Category.name) private readonly categoryModel: Model<CategoryDocument>,
-    @InjectModel(SubCategory.name)
-    private readonly subCategoryModel: Model<SubCategoryDocument>,
-  ) {}
+  @InjectModel(Product.name)
+  private readonly productModel: Model<ProductDocument>,
+
+  @InjectModel(Category.name)
+  private readonly categoryModel: Model<CategoryDocument>,
+
+  @InjectModel(SubCategory.name)
+  private readonly subCategoryModel: Model<SubCategoryDocument>,
+
+  private readonly uploadService: UploadService,
+) {}
 
   private async generateUniqueSlug(name: string, excludeId?: string): Promise<string> {
     const baseSlug = slugify(name);
@@ -50,19 +56,36 @@ export class ProductService {
     return subCategory;
   }
 
-  async create(dto: CreateProductDto) {
-    const subCategory = await this.resolveSubCategory(dto.subCategory);
-    const slug = await this.generateUniqueSlug(dto.name);
+ async create(
+  dto: CreateProductDto,
+  files: Express.Multer.File[],
+) {
+  const subCategory = await this.resolveSubCategory(dto.subCategory);
 
-    const product = await this.productModel.create({
-      ...dto,
-      slug,
-      category: subCategory.category, // derived, not passed in by the client
-    });
+  const slug = await this.generateUniqueSlug(dto.name);
 
-    return { success: true, message: 'Product created successfully.', data: product };
+  let imageUrls: string[] = [];
+
+  if (files && files.length > 0) {
+    imageUrls = await this.uploadService.uploadImages(
+      files,
+      'products',
+    );
   }
 
+  const product = await this.productModel.create({
+    ...dto,
+    slug,
+    category: subCategory.category,
+    images: imageUrls,
+  });
+
+  return {
+    success: true,
+    message: 'Product created successfully.',
+    data: product,
+  };
+}
   async findAll() {
     const products = await this.productModel
       .find()
@@ -137,45 +160,107 @@ export class ProductService {
     return { success: true, data: { ...product.toJSON(), suggestions } };
   }
 
-  async update(id: string, dto: UpdateProductDto) {
-    const product = await this.productModel.findById(id);
-    if (!product) throw new NotFoundException('Product not found.');
+ async update(
+  id: string,
+  dto: UpdateProductDto,
+  files?: Express.Multer.File[],
+) {
+  const product = await this.productModel.findById(id);
 
-    if (dto.subCategory) {
-      const subCategory = await this.resolveSubCategory(dto.subCategory);
-      product.subCategory = subCategory._id as any;
-      product.category = subCategory.category; // keep denormalized category in sync
-    }
-
-    if (dto.name && dto.name.trim() !== product.name) {
-      product.slug = await this.generateUniqueSlug(dto.name, id);
-      product.name = dto.name.trim();
-    }
-
-    Object.assign(product, {
-      shortDescription: dto.shortDescription ?? product.shortDescription,
-      longDescription: dto.longDescription ?? product.longDescription,
-      price: dto.price ?? product.price,
-      discount: dto.discount ?? product.discount,
-      stock: dto.stock ?? product.stock,
-      images: dto.images ?? product.images,
-      suggestionItems: dto.suggestionItems ?? product.suggestionItems,
-      isActive: dto.isActive ?? product.isActive,
-    });
-
-    await product.save();
-
-    return { success: true, message: 'Product updated successfully.', data: product };
+  if (!product) {
+    throw new NotFoundException('Product not found.');
   }
+
+  // Update subcategory & category
+  if (dto.subCategory) {
+    const subCategory = await this.resolveSubCategory(dto.subCategory);
+
+    product.subCategory = subCategory._id as any;
+    product.category = subCategory.category;
+  }
+
+  // Update slug if name changed
+  if (dto.name && dto.name.trim() !== product.name) {
+    product.name = dto.name.trim();
+    product.slug = await this.generateUniqueSlug(dto.name, id);
+  }
+
+  // Upload new images if provided
+  if (files && files.length > 0) {
+
+    // Delete old images from Supabase
+    if (product.images?.length) {
+      for (const image of product.images) {
+        await this.uploadService.deleteImage(image);
+      }
+    }
+
+    // Upload new images
+    product.images = await this.uploadService.uploadImages(
+      files,
+      'products',
+    );
+  }
+
+  // Update remaining fields
+  product.shortDescription =
+    dto.shortDescription ?? product.shortDescription;
+
+  product.longDescription =
+    dto.longDescription ?? product.longDescription;
+
+  product.price =
+    dto.price ?? product.price;
+
+  product.discount =
+    dto.discount ?? product.discount;
+
+  product.stock =
+    dto.stock ?? product.stock;
+
+  if (dto.suggestionItems) {
+  product.suggestionItems = dto.suggestionItems.map(
+    (id) => new Types.ObjectId(id),
+  );
+}
+  product.isActive =
+    dto.isActive ?? product.isActive;
+
+  await product.save();
+
+  return {
+    success: true,
+    message: 'Product updated successfully.',
+    data: product,
+  };
+}
 
   async remove(id: string) {
-    const product = await this.productModel.findById(id);
-    if (!product) throw new NotFoundException('Product not found.');
+  const product = await this.productModel.findById(id);
 
-    await product.deleteOne();
-
-    return { success: true, message: 'Product deleted successfully.' };
+  if (!product) {
+    throw new NotFoundException('Product not found.');
   }
+
+  // Delete images from Supabase
+  if (product.images && product.images.length > 0) {
+    for (const image of product.images) {
+      try {
+        await this.uploadService.deleteImage(image);
+      } catch (error) {
+        console.error('Failed to delete image:', image, error);
+      }
+    }
+  }
+
+  // Delete product from MongoDB
+  await product.deleteOne();
+
+  return {
+    success: true,
+    message: 'Product deleted successfully.',
+  };
+}
 
   
   async getCatalogTree() {
