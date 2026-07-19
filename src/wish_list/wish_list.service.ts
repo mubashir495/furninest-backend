@@ -2,11 +2,11 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Wishlist, WishlistDocument } from './schema/wishlist.schema';
-
 import { Product, ProductDocument } from '../product/schema/product.schema';
 import { AddWishlistDto } from './dto/create-wish_list.dto';
 
@@ -20,24 +20,38 @@ export class WishlistService {
     private readonly productModel: Model<ProductDocument>,
   ) {}
 
+  // ہیلپر: ObjectId کی تصدیق
+  private validateObjectId(id: string) {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid ID format');
+    }
+    return new Types.ObjectId(id);
+  }
+
+  // ✅ Add to wishlist
   async add(userId: string, dto: AddWishlistDto) {
-    const product = await this.productModel.findById(dto.productId);
+    const userObjectId = this.validateObjectId(userId);
+    const productObjectId = this.validateObjectId(dto.productId);
+
+    // چیک کریں کہ پروڈکٹ موجود ہے
+    const product = await this.productModel.findById(productObjectId);
     if (!product) {
       throw new NotFoundException('Product not found.');
     }
 
+    // چیک کریں کہ پہلے سے موجود تو نہیں
     const existing = await this.wishlistModel.findOne({
-      user: userId,
-      product: dto.productId,
+      user: userObjectId,
+      product: productObjectId,
     });
-
     if (existing) {
       throw new ConflictException('Product is already in your wishlist.');
     }
 
+    // نیا آئٹم بنائیں
     const wishlistItem = new this.wishlistModel({
-      user: new Types.ObjectId(userId),
-      product: new Types.ObjectId(dto.productId),
+      user: userObjectId,
+      product: productObjectId,
     });
     await wishlistItem.save();
 
@@ -48,9 +62,11 @@ export class WishlistService {
     };
   }
 
+  // ✅ تمام wishlist آئٹمز
   async findAll(userId: string) {
+    const userObjectId = this.validateObjectId(userId);
     const items = await this.wishlistModel
-      .find({ user: userId })
+      .find({ user: userObjectId })
       .populate({
         path: 'product',
         select:
@@ -62,18 +78,24 @@ export class WishlistService {
   }
 
   async isWishlisted(userId: string, productId: string) {
+    const userObjectId = this.validateObjectId(userId);
+    const productObjectId = this.validateObjectId(productId);
+
     const exists = await this.wishlistModel.exists({
-      user: userId,
-      product: productId,
+      user: userObjectId,
+      product: productObjectId,
     });
 
     return { success: true, data: { wishlisted: !!exists } };
   }
 
   async remove(userId: string, productId: string) {
+    const userObjectId = this.validateObjectId(userId);
+    const productObjectId = this.validateObjectId(productId);
+
     const item = await this.wishlistModel.findOneAndDelete({
-      user: userId,
-      product: productId,
+      user: userObjectId,
+      product: productObjectId,
     });
 
     if (!item) {
@@ -84,10 +106,15 @@ export class WishlistService {
       message: 'Product removed from wishlist.',
     };
   }
+
   async toggle(userId: string, dto: AddWishlistDto) {
+    const userObjectId = this.validateObjectId(userId);
+    const productObjectId = this.validateObjectId(dto.productId);
+
+    // چیک کریں کہ پہلے سے موجود ہے؟
     const existing = await this.wishlistModel.findOne({
-      user: userId,
-      product: dto.productId,
+      user: userObjectId,
+      product: productObjectId,
     });
 
     if (existing) {
@@ -99,14 +126,14 @@ export class WishlistService {
       };
     }
 
-    const product = await this.productModel.findById(dto.productId);
+    const product = await this.productModel.findById(productObjectId);
     if (!product) {
       throw new NotFoundException('Product not found.');
     }
 
     const wishlistItem = new this.wishlistModel({
-      user: new Types.ObjectId(userId),
-      product: new Types.ObjectId(dto.productId),
+      user: userObjectId,
+      product: productObjectId,
     });
     await wishlistItem.save();
 
@@ -117,8 +144,9 @@ export class WishlistService {
     };
   }
 
-  async clear(userId: string) {
-    await this.wishlistModel.deleteMany({ user: userId });
+ async clear(userId: string) {
+    const userObjectId = this.validateObjectId(userId);
+    await this.wishlistModel.deleteMany({ user: userObjectId });
 
     return {
       success: true,

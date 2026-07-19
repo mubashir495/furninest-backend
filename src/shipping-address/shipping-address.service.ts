@@ -1,14 +1,7 @@
-import {
-  Injectable,
-  NotFoundException,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import {
-  ShippingAddress,
-  ShippingAddressDocument,
-} from './schema/shipping-address.schema';
+import { ShippingAddress, ShippingAddressDocument } from './schema/shipping-address.schema';
 import { CreateShippingAddressDto } from './dto/create-shipping-address.dto';
 import { UpdateShippingAddressDto } from './dto/update-shipping-address.dto';
 
@@ -16,158 +9,90 @@ import { UpdateShippingAddressDto } from './dto/update-shipping-address.dto';
 export class ShippingAddressService {
   constructor(
     @InjectModel(ShippingAddress.name)
-    private readonly shippingAddressModel: Model<ShippingAddressDocument>,
+    private shippingAddressModel: Model<ShippingAddressDocument>,
   ) {}
 
-  private async unsetPreviousDefault(userId: string) {
-    await this.shippingAddressModel.updateMany(
-      { user: userId, isDefault: true },
-      { $set: { isDefault: false } },
-    );
+  async findAll(userId: string) {
+    this.validateObjectId(userId);
+    const objectId = new Types.ObjectId(userId);
+    const data = await this.shippingAddressModel.find({ user: objectId }).exec();
+    return { success: true, data };
+  }
+
+  async findOne(userId: string, id: string) {
+    this.validateObjectId(userId);
+    this.validateObjectId(id);
+    const data = await this.shippingAddressModel.findOne({
+      _id: new Types.ObjectId(id),
+      user: new Types.ObjectId(userId),
+    }).exec();
+    if (!data) {
+      throw new NotFoundException('Address not found');
+    }
+    return { success: true, data };
   }
 
   async create(userId: string, dto: CreateShippingAddressDto) {
-    const existingCount = await this.shippingAddressModel.countDocuments({
-      user: userId,
+    this.validateObjectId(userId);
+    const objectId = new Types.ObjectId(userId);
+    const newAddress = new this.shippingAddressModel({
+      ...dto,
+      user: objectId,
     });
-
-    // First address a user adds automatically becomes their default
-    const shouldBeDefault = dto.isDefault || existingCount === 0;
-
-    if (shouldBeDefault) {
-      await this.unsetPreviousDefault(userId);
-    }
-
-console.log('Saving user:', userId);
-
-const address = new this.shippingAddressModel({
-  ...dto,
-  user: new Types.ObjectId(userId),
-
-});
-console.log(address);
-    await address.save();
-
-    return {
-      success: true,
-      message: 'Shipping address added.',
-      data: address,
-    };
+    const data = await newAddress.save();
+    return { success: true, data, message: 'Address created successfully' };
   }
 
-  async findAll(userId: string) {
-    const addresses = await this.shippingAddressModel
-      .find({ user: userId })
-      .sort({ isDefault: -1, created_date: -1 });
-
-    return { success: true, data: addresses };
+  async update(userId: string, id: string, dto: UpdateShippingAddressDto) {
+    this.validateObjectId(userId);
+    this.validateObjectId(id);
+    const data = await this.shippingAddressModel.findOneAndUpdate(
+      { _id: new Types.ObjectId(id), user: new Types.ObjectId(userId) },
+      dto,
+      { new: true },
+    ).exec();
+    if (!data) {
+      throw new NotFoundException('Address not found');
+    }
+    return { success: true, data, message: 'Address updated successfully' };
   }
 
-  async findOne(userId: string, addressId: string) {
-    const address = await this.shippingAddressModel.findById(addressId);
+  async setDefault(userId: string, id: string) {
+    this.validateObjectId(userId);
+    this.validateObjectId(id);
 
-    if (!address) {
-      throw new NotFoundException('Shipping address not found.');
+    await this.shippingAddressModel.updateMany(
+      { user: new Types.ObjectId(userId) },
+      { isDefault: false },
+    ).exec();
+
+    const data = await this.shippingAddressModel.findOneAndUpdate(
+      { _id: new Types.ObjectId(id), user: new Types.ObjectId(userId) },
+      { isDefault: true },
+      { new: true },
+    ).exec();
+    if (!data) {
+      throw new NotFoundException('Address not found');
     }
-
-    if (address.user.toString() !== userId) {
-      throw new ForbiddenException('You cannot access this address.');
-    }
-
-    return { success: true, data: address };
+    return { success: true, data, message: 'Default address updated' };
   }
 
-  async update(userId: string, addressId: string, dto: UpdateShippingAddressDto) {
-    const address = await this.shippingAddressModel.findById(addressId);
-
-    if (!address) {
-      throw new NotFoundException('Shipping address not found.');
+  async remove(userId: string, id: string) {
+    this.validateObjectId(userId);
+    this.validateObjectId(id);
+    const result = await this.shippingAddressModel.findOneAndDelete({
+      _id: new Types.ObjectId(id),
+      user: new Types.ObjectId(userId),
+    }).exec();
+    if (!result) {
+      throw new NotFoundException('Address not found');
     }
-
-    if (address.user.toString() !== userId) {
-      throw new ForbiddenException('You cannot update this address.');
-    }
-
-    if (dto.isDefault === true) {
-      await this.unsetPreviousDefault(userId);
-    }
-
-    Object.assign(address, dto);
-    await address.save();
-
-    return {
-      success: true,
-      message: 'Shipping address updated.',
-      data: address,
-    };
+    return { success: true, message: 'Address deleted successfully' };
   }
 
-  async remove(userId: string, addressId: string) {
-    const address = await this.shippingAddressModel.findById(addressId);
-
-    if (!address) {
-      throw new NotFoundException('Shipping address not found.');
+  private validateObjectId(id: string) {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid ID format');
     }
-
-    if (address.user.toString() !== userId) {
-      throw new ForbiddenException('You cannot delete this address.');
-    }
-
-    await address.deleteOne();
-
-    // If the deleted address was the default, promote the next one automatically
-    if (address.isDefault) {
-      const nextAddress = await this.shippingAddressModel
-        .findOne({ user: userId })
-        .sort({ created_date: -1 });
-
-      if (nextAddress) {
-        nextAddress.isDefault = true;
-        await nextAddress.save();
-      }
-    }
-
-    return {
-      success: true,
-      message: 'Shipping address deleted.',
-    };
-  }
-
-  async setDefault(userId: string, addressId: string) {
-    const address = await this.shippingAddressModel.findById(addressId);
-
-    if (!address) {
-      throw new NotFoundException('Shipping address not found.');
-    }
-
-    if (address.user.toString() !== userId) {
-      throw new ForbiddenException('You cannot modify this address.');
-    }
-
-    await this.unsetPreviousDefault(userId);
-
-    address.isDefault = true;
-    await address.save();
-
-    return {
-      success: true,
-      message: 'Default shipping address updated.',
-      data: address,
-    };
-  }
-
-  
-  async getOwnedAddress(userId: string, addressId: string) {
-    const address = await this.shippingAddressModel.findById(addressId);
-
-    if (!address) {
-      throw new NotFoundException('Shipping address not found.');
-    }
-
-    if (address.user.toString() !== userId) {
-      throw new ForbiddenException('You cannot use this address.');
-    }
-
-    return address;
   }
 }

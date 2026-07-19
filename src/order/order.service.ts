@@ -40,6 +40,13 @@ export class OrderService {
     private readonly productModel: Model<ProductDocument>,
   ) {}
 
+  private toObjectId(id: string): Types.ObjectId {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid ID format');
+    }
+    return new Types.ObjectId(id);
+  }
+
   private async generateOrderNumber(): Promise<string> {
     const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
 
@@ -78,12 +85,12 @@ export class OrderService {
 
     if (dto.shippingAddress) {
       const existingCount = await this.shippingAddressModel.countDocuments({
-        user: userId,
+        user: this.toObjectId(userId),
       });
 
       const newAddress = new this.shippingAddressModel({
         ...dto.shippingAddress,
-        user: new Types.ObjectId(userId),
+        user: this.toObjectId(userId),
         isDefault: existingCount === 0,
       });
       await newAddress.save();
@@ -96,8 +103,12 @@ export class OrderService {
     );
   }
 
+  // ✅ درست شدہ createFromCart
   async createFromCart(userId: string, dto: CreateOrderDto) {
-    const cart = await this.cartModel.findOne({ user: userId });
+    const userObjectId = this.toObjectId(userId);
+
+    // 🔑 کارٹ کو ObjectId کے ساتھ ڈھونڈیں
+    const cart = await this.cartModel.findOne({ user: userObjectId });
     if (!cart) {
       throw new BadRequestException('Your cart is empty.');
     }
@@ -137,7 +148,7 @@ export class OrderService {
     );
 
     const order = new this.orderModel({
-      user: new Types.ObjectId(userId),
+      user: userObjectId,
       orderNumber,
       shippingAddress: shippingAddressId,
       paymentMethod: dto.paymentMethod,
@@ -182,15 +193,18 @@ export class OrderService {
     };
   }
 
+  // ✅ درست شدہ findMyOrders
   async findMyOrders(userId: string) {
+    const userObjectId = this.toObjectId(userId);
     const orders = await this.orderModel
-      .find({ user: userId })
+      .find({ user: userObjectId })
       .populate('shippingAddress')
       .sort({ created_date: -1 });
 
     return { success: true, data: orders };
   }
 
+  // ✅ findOne (کسی تبدیلی کی ضرورت نہیں، کیونکہ owner چیک toString سے ہو رہا ہے)
   async findOne(userId: string, orderId: string, isAdmin = false) {
     const order = await this.orderModel
       .findById(orderId)
@@ -212,6 +226,7 @@ export class OrderService {
     };
   }
 
+  // ✅ cancelOrder (بھی ٹھیک ہے، toString سے موازنہ کر رہے ہیں)
   async cancelOrder(userId: string, orderId: string) {
     const order = await this.orderModel.findById(orderId);
 

@@ -24,11 +24,21 @@ export class CartService {
     private readonly productModel: Model<ProductDocument>,
   ) {}
 
-  private async getOrCreateCart(userId: string): Promise<CartDocument> {
-    let cart = await this.cartModel.findOne({ user: userId });
+  // 🔧 ہیلپر: userId کو ObjectId میں تبدیل کریں
+  private toObjectId(id: string): Types.ObjectId {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid ID format');
+    }
+    return new Types.ObjectId(id);
+  }
+
+    private async getOrCreateCart(userId: string): Promise<CartDocument> {
+    const userObjectId = this.toObjectId(userId);
+
+    let cart = await this.cartModel.findOne({ user: userObjectId });
 
     if (!cart) {
-      cart = new this.cartModel({ user: new Types.ObjectId(userId) });
+      cart = new this.cartModel({ user: userObjectId });
       await cart.save();
     }
 
@@ -72,7 +82,8 @@ export class CartService {
   }
 
   async addItem(userId: string, dto: AddCartItemDto) {
-    const product = await this.productModel.findById(dto.productId);
+    const productObjectId = this.toObjectId(dto.productId);
+    const product = await this.productModel.findById(productObjectId);
     if (!product) {
       throw new NotFoundException('Product not found.');
     }
@@ -91,9 +102,10 @@ export class CartService {
 
     const cart = await this.getOrCreateCart(userId);
 
+    // موجودہ آئٹم چیک کریں
     const existingItem = await this.cartItemModel.findOne({
       cart: cart._id,
-      product: dto.productId,
+      product: productObjectId,
     });
 
     if (existingItem) {
@@ -118,7 +130,7 @@ export class CartService {
 
     const cartItem = new this.cartItemModel({
       cart: cart._id,
-      product: new Types.ObjectId(dto.productId),
+      product: productObjectId,
       quantity,
       price: (product as any).finalPrice ?? product.price,
     });
@@ -137,17 +149,18 @@ export class CartService {
     dto: UpdateCartItemDto,
   ) {
     const cart = await this.getOrCreateCart(userId);
+    const productObjectId = this.toObjectId(productId);
 
     const cartItem = await this.cartItemModel.findOne({
       cart: cart._id,
-      product: productId,
+      product: productObjectId,
     });
 
     if (!cartItem) {
       throw new NotFoundException('Item not found in your cart.');
     }
 
-    const product = await this.productModel.findById(productId);
+    const product = await this.productModel.findById(productObjectId);
     if (!product) {
       throw new NotFoundException('Product not found.');
     }
@@ -171,10 +184,11 @@ export class CartService {
 
   async removeItem(userId: string, productId: string) {
     const cart = await this.getOrCreateCart(userId);
+    const productObjectId = this.toObjectId(productId);
 
     const deleted = await this.cartItemModel.findOneAndDelete({
       cart: cart._id,
-      product: productId,
+      product: productObjectId,
     });
 
     if (!deleted) {

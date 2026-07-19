@@ -20,10 +20,11 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 export class ShippingAddressController {
   constructor(private readonly shippingAddressService: ShippingAddressService) {}
 
-  @Get()
-  findAll(@CurrentUser('id') userId: string) {
-    return this.shippingAddressService.findAll(userId);
-  }
+ @Get()
+findAll(@CurrentUser('id') userId: string) {
+  console.log('Received userId:', userId);  // add this
+  return this.shippingAddressService.findAll(userId);
+}
 
   @Get(':id')
   findOne(@CurrentUser('id') userId: string, @Param('id') id: string) {
