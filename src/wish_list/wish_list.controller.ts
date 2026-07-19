@@ -22,7 +22,7 @@ export class WishlistController {
   findAll(@CurrentUser('userId') userId: string) {
     return this.wishlistService.findAll(userId);
   }
-
+  
   @Get('check/:productId')
   isWishlisted(
     @CurrentUser('userId') userId: string,
@@ -30,7 +30,6 @@ export class WishlistController {
   ) {
     return this.wishlistService.isWishlisted(userId, productId);
   }
-
   @Post()
   add(@CurrentUser('userId') userId: string, @Body() dto: AddWishlistDto) {
     return this.wishlistService.add(userId, dto);

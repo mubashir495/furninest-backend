@@ -78,13 +78,11 @@ export class WishlistService {
     if (!item) {
       throw new NotFoundException('Product not found in your wishlist.');
     }
-
     return {
       success: true,
       message: 'Product removed from wishlist.',
     };
   }
-
   async toggle(userId: string, dto: AddWishlistDto) {
     const existing = await this.wishlistModel.findOne({
       user: userId,
