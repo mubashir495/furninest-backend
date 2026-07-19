@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 
 import { Wishlist, WishlistSchema } from './schema/wishlist.schema';
+
 import { Product, ProductSchema } from '../product/schema/product.schema';
 import { WishlistService } from './wish_list.service';
 import { WishlistController } from './wish_list.controller';

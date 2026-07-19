@@ -6,6 +6,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Wishlist, WishlistDocument } from './schema/wishlist.schema';
+
 import { Product, ProductDocument } from '../product/schema/product.schema';
 import { AddWishlistDto } from './dto/create-wish_list.dto';
 

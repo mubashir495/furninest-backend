@@ -1,17 +1,16 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { WishListController } from './wish_list.controller';
-import { WishListService } from './wish_list.service';
-
+import { WishlistService } from './wish_list.service';
+import { WishlistController } from './wish_list.controller';
 describe('WishListController', () => {
-  let controller: WishListController;
+  let controller: WishlistController;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      controllers: [WishListController],
-      providers: [WishListService],
+      controllers: [WishlistController],
+      providers: [WishlistService],
     }).compile();
 
-    controller = module.get<WishListController>(WishListController);
+    controller = module.get<WishlistController>(WishlistController);
   });
 
   it('should be defined', () => {
