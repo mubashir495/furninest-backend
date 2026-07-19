@@ -28,25 +28,25 @@ export class OrderController {
 
   @Post()
   checkout(
-    @CurrentUser('userId') userId: string,
+    @CurrentUser('id') userId: string,
     @Body() dto: CreateOrderDto,
   ) {
     return this.orderService.createFromCart(userId, dto);
   }
 
   @Get('my-orders')
-  findMyOrders(@CurrentUser('userId') userId: string) {
+  findMyOrders(@CurrentUser('id') userId: string) {
     return this.orderService.findMyOrders(userId);
   }
 
   @Get(':id')
-  findOne(@CurrentUser('userId') userId: string, @Param('id') id: string) {
+  findOne(@CurrentUser('id') userId: string, @Param('id') id: string) {
     return this.orderService.findOne(userId, id);
   }
 
   @Patch(':id/cancel')
   cancelOrder(
-    @CurrentUser('userId') userId: string,
+    @CurrentUser('id') userId: string,
     @Param('id') id: string,
   ) {
     return this.orderService.cancelOrder(userId, id);

@@ -21,18 +21,18 @@ export class ShippingAddressController {
   constructor(private readonly shippingAddressService: ShippingAddressService) {}
 
   @Get()
-  findAll(@CurrentUser('userId') userId: string) {
+  findAll(@CurrentUser('id') userId: string) {
     return this.shippingAddressService.findAll(userId);
   }
 
   @Get(':id')
-  findOne(@CurrentUser('userId') userId: string, @Param('id') id: string) {
+  findOne(@CurrentUser('id') userId: string, @Param('id') id: string) {
     return this.shippingAddressService.findOne(userId, id);
   }
 
   @Post()
   create(
-    @CurrentUser('userId') userId: string,
+    @CurrentUser('id') userId: string,
     @Body() dto: CreateShippingAddressDto,
   ) {
     return this.shippingAddressService.create(userId, dto);
@@ -40,7 +40,7 @@ export class ShippingAddressController {
 
   @Patch(':id')
   update(
-    @CurrentUser('userId') userId: string,
+    @CurrentUser('id') userId: string,
     @Param('id') id: string,
     @Body() dto: UpdateShippingAddressDto,
   ) {
@@ -48,12 +48,12 @@ export class ShippingAddressController {
   }
 
   @Patch(':id/set-default')
-  setDefault(@CurrentUser('userId') userId: string, @Param('id') id: string) {
+  setDefault(@CurrentUser('id') userId: string, @Param('id') id: string) {
     return this.shippingAddressService.setDefault(userId, id);
   }
 
   @Delete(':id')
-  remove(@CurrentUser('userId') userId: string, @Param('id') id: string) {
+  remove(@CurrentUser('id') userId: string, @Param('id') id: string) {
     return this.shippingAddressService.remove(userId, id);
   }
 }

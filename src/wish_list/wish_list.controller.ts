@@ -19,35 +19,36 @@ export class WishlistController {
   constructor(private readonly wishlistService: WishlistService) {}
 
   @Get()
-  findAll(@CurrentUser('userId') userId: string) {
+  findAll(@CurrentUser('id') userId: string) {
     return this.wishlistService.findAll(userId);
   }
-  
+
   @Get('check/:productId')
   isWishlisted(
-    @CurrentUser('userId') userId: string,
+    @CurrentUser('id') userId: string,
     @Param('productId') productId: string,
   ) {
     return this.wishlistService.isWishlisted(userId, productId);
   }
+
   @Post()
-  add(@CurrentUser('userId') userId: string, @Body() dto: AddWishlistDto) {
+  add(@CurrentUser('id') userId: string, @Body() dto: AddWishlistDto) {
     return this.wishlistService.add(userId, dto);
   }
 
   @Post('toggle')
-  toggle(@CurrentUser('userId') userId: string, @Body() dto: AddWishlistDto) {
+  toggle(@CurrentUser('id') userId: string, @Body() dto: AddWishlistDto) {
     return this.wishlistService.toggle(userId, dto);
   }
 
   @Delete('clear')
-  clear(@CurrentUser('userId') userId: string) {
+  clear(@CurrentUser('id') userId: string) {
     return this.wishlistService.clear(userId);
   }
 
   @Delete(':productId')
   remove(
-    @CurrentUser('userId') userId: string,
+    @CurrentUser('id') userId: string,
     @Param('productId') productId: string,
   ) {
     return this.wishlistService.remove(userId, productId);
