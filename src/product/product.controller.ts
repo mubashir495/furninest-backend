@@ -10,7 +10,7 @@ import {
   UseInterceptors,
   UploadedFiles,
 } from '@nestjs/common';
-import { FilesInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -64,11 +64,21 @@ export class ProductController {
   @Roles('ADMIN')
   @Post()
   @UseInterceptors(
-    FilesInterceptor('images', 10, multerOptions),
+    FileFieldsInterceptor(
+      [
+        { name: 'thumbnail', maxCount: 1 },
+        { name: 'images', maxCount: 10 },
+      ],
+      multerOptions,
+    ),
   )
   create(
     @Body() dto: CreateProductDto,
-    @UploadedFiles() files: Express.Multer.File[],
+    @UploadedFiles()
+    files: {
+      thumbnail?: Express.Multer.File[];
+      images?: Express.Multer.File[];
+    },
   ) {
     return this.productService.create(dto, files);
   }
@@ -77,12 +87,22 @@ export class ProductController {
   @Roles('ADMIN')
   @Patch(':id')
   @UseInterceptors(
-    FilesInterceptor('images', 10, multerOptions),
+    FileFieldsInterceptor(
+      [
+        { name: 'thumbnail', maxCount: 1 },
+        { name: 'images', maxCount: 10 },
+      ],
+      multerOptions,
+    ),
   )
   update(
     @Param('id') id: string,
     @Body() dto: UpdateProductDto,
-    @UploadedFiles() files: Express.Multer.File[],
+    @UploadedFiles()
+    files: {
+      thumbnail?: Express.Multer.File[];
+      images?: Express.Multer.File[];
+    },
   ) {
     return this.productService.update(id, dto, files);
   }

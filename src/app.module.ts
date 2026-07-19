@@ -13,7 +13,10 @@ import { ProductModule } from './product/product.module';
 import { SupabaseModule } from './supabase/supabase.module';
 import { UploadService } from './upload/upload.service';
 import { UploadModule } from './upload/upload.module';
-
+import { WishlistModule } from './wish_list/wish_list.module';
+import { CartModule } from './cart/cart.module';
+import { OrderModule } from './order/order.module';
+import { ShippingAddressModule } from './shipping-address/shipping-address.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -60,6 +63,10 @@ import { UploadModule } from './upload/upload.module';
     ProductModule,
     SupabaseModule,
     UploadModule,
+    WishlistModule,
+    CartModule,
+    OrderModule,
+    ShippingAddressModule,
   ],
   controllers: [AppController],
   providers: [

@@ -26,6 +26,9 @@ export class Product {
   @Prop({ min: 0, default: 0 })
   stock: number;
 
+  @Prop({ default: '' })
+  thumbnailImage: string;
+
   @Prop({ type: [String], default: [] })
   images: string[];
 

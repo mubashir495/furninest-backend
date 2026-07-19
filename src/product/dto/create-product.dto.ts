@@ -45,6 +45,10 @@ export class CreateProductDto {
   @Min(0)
   stock?: number;
 
+  @IsOptional()
+  @IsString()
+  thumbnailImage?: string;
+
   @IsMongoId({
     message: 'subCategory must be a valid subcategory id',
   })
