@@ -8,6 +8,7 @@ async function bootstrap() {
   const allowedOrigins = [
     process.env.FRONTEND_URL, 
     'https://furninest-pi.vercel.app',
+    'https://furninest-pi.vercel.app/',
     'http://localhost:3000',
     'http://localhost:3001',
     'http://localhost:3002',
