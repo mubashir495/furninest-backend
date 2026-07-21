@@ -15,8 +15,7 @@ async function bootstrapServerless() {
     'http://localhost:3002',
     'http://localhost:5173',            
     'http://localhost:5174',
-    'https://furninest-frontend.vercel.app', 
-    'https://furninest-backend-taupe.vercel.app', 
+    'https://furninest-pi.vercel.app', 
   ].filter(Boolean); 
   app.enableCors({
     origin: (
