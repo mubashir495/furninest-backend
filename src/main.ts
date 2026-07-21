@@ -6,7 +6,8 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   const allowedOrigins = [
-    process.env.FRONTEND_URL,   
+    process.env.FRONTEND_URL, 
+    'https://furninest-pi.vercel.app',
     'http://localhost:3000',
     'http://localhost:3001',
     'http://localhost:3002',
