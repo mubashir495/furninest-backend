@@ -19,7 +19,7 @@ const parseArrayField = ({ value }: { value: any }) => {
       const parsed = JSON.parse(value);
       if (Array.isArray(parsed)) return parsed;
     } catch {
-      // not JSON
+      // not JSON, fall back to comma-split
     }
     return value.split(',').map((v) => v.trim()).filter(Boolean);
   }
@@ -40,20 +40,20 @@ export class CreateProductDto {
   @IsNotEmpty()
   longDescription: string;
 
-  @Type(() => Number)         
+  @Type(() => Number)
   @IsNumber()
   @Min(0)
   price: number;
 
   @IsOptional()
-  @Type(() => Number)         
+  @Type(() => Number)
   @IsNumber()
   @Min(0)
   @Max(100)
   discount?: number;
 
   @IsOptional()
-  @Type(() => Number)        s
+  @Type(() => Number)
   @IsNumber()
   @Min(0)
   stock?: number;
@@ -62,12 +62,14 @@ export class CreateProductDto {
   @IsString()
   thumbnailImage?: string;
 
+  // Available Colors
   @IsOptional()
   @Transform(parseArrayField)
   @IsArray()
   @IsString({ each: true })
   color?: string[];
 
+  // Available Sizes
   @IsOptional()
   @Transform(parseArrayField)
   @IsArray()
