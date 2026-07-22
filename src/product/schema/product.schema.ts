@@ -3,7 +3,12 @@ import { Document, Types } from 'mongoose';
 
 export type ProductDocument = Product & Document;
 
-@Schema({ timestamps: { createdAt: 'created_date', updatedAt: 'updated_date' } })
+@Schema({
+  timestamps: {
+    createdAt: 'created_date',
+    updatedAt: 'updated_date',
+  },
+})
 export class Product {
   @Prop({ required: true, trim: true })
   name: string;
@@ -32,13 +37,41 @@ export class Product {
   @Prop({ type: [String], default: [] })
   images: string[];
 
-  @Prop({ type: Types.ObjectId, ref: 'SubCategory', required: true, index: true })
+  // Available Colors
+  @Prop({
+    type: [String],
+    default: [],
+  })
+  color: string[];
+
+  // Available Sizes
+  @Prop({
+    type: [String],
+    default: [],
+  })
+  size: string[];
+
+  @Prop({
+    type: Types.ObjectId,
+    ref: 'SubCategory',
+    required: true,
+    index: true,
+  })
   subCategory: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Category', required: true, index: true })
+  @Prop({
+    type: Types.ObjectId,
+    ref: 'Category',
+    required: true,
+    index: true,
+  })
   category: Types.ObjectId;
 
-  @Prop({ type: [Types.ObjectId], ref: 'Product', default: [] })
+  @Prop({
+    type: [Types.ObjectId],
+    ref: 'Product',
+    default: [],
+  })
   suggestionItems: Types.ObjectId[];
 
   @Prop({ default: true })

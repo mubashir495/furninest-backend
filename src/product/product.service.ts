@@ -16,7 +16,7 @@ import { slugify } from '../common/utils/slugify';
 import { UploadService } from '../upload/upload.service';
 
 const PUBLIC_FIELDS =
-  'name slug shortDescription longDescription price discount stock thumbnailImage images category subCategory isActive created_date updated_date';
+  'name slug shortDescription longDescription price discount stock thumbnailImage images color size category subCategory isActive created_date updated_date';
 
 export interface ProductFiles {
   thumbnail?: Express.Multer.File[];
@@ -93,6 +93,8 @@ export class ProductService {
       category: subCategory.category,
       thumbnailImage: thumbnailUrl || dto.thumbnailImage || '',
       images: imageUrls,
+      color: dto.color ?? [],
+      size: dto.size ?? [],
     });
     await product.save();
 
@@ -106,6 +108,7 @@ export class ProductService {
   async findAll() {
     const products = await this.productModel
       .find()
+      .select(PUBLIC_FIELDS)
       .populate('category', 'name slug')
       .populate('subCategory', 'name slug')
       .sort({ created_date: -1 });
@@ -116,6 +119,7 @@ export class ProductService {
   async findByCategory(categoryId: string) {
     const products = await this.productModel
       .find({ category: categoryId, isActive: true })
+      .select(PUBLIC_FIELDS)
       .populate('category', 'name slug')
       .populate('subCategory', 'name slug')
       .sort({ created_date: -1 });
@@ -126,6 +130,7 @@ export class ProductService {
   async findBySubCategory(subCategoryId: string) {
     const products = await this.productModel
       .find({ subCategory: subCategoryId, isActive: true })
+      .select(PUBLIC_FIELDS)
       .populate('category', 'name slug')
       .populate('subCategory', 'name slug')
       .sort({ created_date: -1 });
@@ -137,7 +142,7 @@ export class ProductService {
     if (product.suggestionItems?.length) {
       return this.productModel
         .find({ _id: { $in: product.suggestionItems }, isActive: true })
-        .select('name slug price discount thumbnailImage images stock')
+        .select('name slug price discount thumbnailImage images color size stock')
         .limit(8);
     }
 
@@ -147,7 +152,7 @@ export class ProductService {
         _id: { $ne: product._id },
         isActive: true,
       })
-      .select('name slug price discount thumbnailImage images stock')
+      .select('name slug price discount thumbnailImage images color size stock')
       .limit(8);
   }
 
@@ -251,6 +256,13 @@ export class ProductService {
     product.stock =
       dto.stock ?? product.stock;
 
+    // Available colors & sizes
+    product.color =
+      dto.color ?? product.color;
+
+    product.size =
+      dto.size ?? product.size;
+
     if (dto.suggestionItems) {
       product.suggestionItems = dto.suggestionItems.map(
         (itemId) => new Types.ObjectId(itemId),
@@ -319,7 +331,7 @@ export class ProductService {
           subCategories.map(async (subCategory) => {
             const products = await this.productModel
               .find({ subCategory: subCategory._id, isActive: true })
-              .select('name slug price discount thumbnailImage images stock')
+              .select('name slug price discount thumbnailImage images color size stock')
               .sort({ name: 1 })
               .lean();
 

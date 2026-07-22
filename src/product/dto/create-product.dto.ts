@@ -1,21 +1,37 @@
 import {
   IsString,
   IsNotEmpty,
-  IsOptional,
   IsNumber,
+  IsOptional,
+  IsBoolean,
+  IsArray,
+  IsMongoId,
   Min,
   Max,
-  IsMongoId,
-  IsArray,
   MaxLength,
-  IsBoolean,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform } from 'class-transformer';
+
+// Helper: multipart/form-data sends arrays as either a JSON string
+// (e.g. '["red","blue"]') or a comma-separated string (e.g. 'red,blue').
+// This normalizes both into a proper string[].
+const parseArrayField = ({ value }: { value: any }) => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // not JSON, fall back to comma-split
+    }
+    return value.split(',').map((v) => v.trim()).filter(Boolean);
+  }
+  return value;
+};
 
 export class CreateProductDto {
   @IsString()
   @IsNotEmpty()
-  @MaxLength(150)
   name: string;
 
   @IsString()
@@ -27,20 +43,17 @@ export class CreateProductDto {
   @IsNotEmpty()
   longDescription: string;
 
-  @Type(() => Number)
   @IsNumber()
   @Min(0)
   price: number;
 
   @IsOptional()
-  @Type(() => Number)
   @IsNumber()
   @Min(0)
   @Max(100)
   discount?: number;
 
   @IsOptional()
-  @Type(() => Number)
   @IsNumber()
   @Min(0)
   stock?: number;
@@ -49,20 +62,32 @@ export class CreateProductDto {
   @IsString()
   thumbnailImage?: string;
 
-  @IsMongoId({
-    message: 'subCategory must be a valid subcategory id',
-  })
+  // Available Colors
+  @IsOptional()
+  @Transform(parseArrayField)
+  @IsArray()
+  @IsString({ each: true })
+  color?: string[];
+
+  // Available Sizes
+  @IsOptional()
+  @Transform(parseArrayField)
+  @IsArray()
+  @IsString({ each: true })
+  size?: string[];
+
+  @IsMongoId()
+  @IsNotEmpty()
   subCategory: string;
 
   @IsOptional()
+  @Transform(parseArrayField)
   @IsArray()
-  @IsMongoId({
-    each: true,
-    message: 'each suggestionItem must be a valid product id',
-  })
+  @IsMongoId({ each: true })
   suggestionItems?: string[];
 
   @IsOptional()
   @IsBoolean()
+  @Transform(({ value }) => value === 'true' || value === true)
   isActive?: boolean;
 }
