@@ -10,11 +10,8 @@ import {
   Max,
   MaxLength,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 
-// Helper: multipart/form-data sends arrays as either a JSON string
-// (e.g. '["red","blue"]') or a comma-separated string (e.g. 'red,blue').
-// This normalizes both into a proper string[].
 const parseArrayField = ({ value }: { value: any }) => {
   if (Array.isArray(value)) return value;
   if (typeof value === 'string') {
@@ -22,7 +19,7 @@ const parseArrayField = ({ value }: { value: any }) => {
       const parsed = JSON.parse(value);
       if (Array.isArray(parsed)) return parsed;
     } catch {
-      // not JSON, fall back to comma-split
+      // not JSON
     }
     return value.split(',').map((v) => v.trim()).filter(Boolean);
   }
@@ -43,17 +40,20 @@ export class CreateProductDto {
   @IsNotEmpty()
   longDescription: string;
 
+  @Type(() => Number)         
   @IsNumber()
   @Min(0)
   price: number;
 
   @IsOptional()
+  @Type(() => Number)         
   @IsNumber()
   @Min(0)
   @Max(100)
   discount?: number;
 
   @IsOptional()
+  @Type(() => Number)        s
   @IsNumber()
   @Min(0)
   stock?: number;
@@ -62,14 +62,12 @@ export class CreateProductDto {
   @IsString()
   thumbnailImage?: string;
 
-  // Available Colors
   @IsOptional()
   @Transform(parseArrayField)
   @IsArray()
   @IsString({ each: true })
   color?: string[];
 
-  // Available Sizes
   @IsOptional()
   @Transform(parseArrayField)
   @IsArray()
