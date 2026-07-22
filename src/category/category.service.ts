@@ -73,6 +73,7 @@ export class CategoryService {
       name: dto.name.trim(),
       slug,
       image: imageUrl,
+      description: dto.description?.trim() || '',
     });
 
     return {
@@ -145,6 +146,11 @@ export class CategoryService {
 
       category.name = dto.name.trim();
       category.slug = await this.generateUniqueSlug(dto.name, id);
+    }
+
+    // Update Description
+    if (dto.description !== undefined) {
+      category.description = dto.description.trim();
     }
 
     // Update Image

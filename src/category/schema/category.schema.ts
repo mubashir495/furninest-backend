@@ -29,6 +29,13 @@ export class Category {
     default: null,
   })
   image: string;
+
+  @Prop({
+    type: String,
+    trim: true,
+    default: '',
+  })
+  description: string;
 }
 
 export const CategorySchema = SchemaFactory.createForClass(Category);

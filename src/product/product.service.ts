@@ -16,7 +16,7 @@ import { slugify } from '../common/utils/slugify';
 import { UploadService } from '../upload/upload.service';
 
 const PUBLIC_FIELDS =
-  'name slug shortDescription longDescription price discount stock thumbnailImage images color size category subCategory isActive created_date updated_date';
+  'name slug shortDescription longDescription price discount stock thumbnailImage images color size category subCategory suggestionItems isActive created_date updated_date';
 
 export interface ProductFiles {
   thumbnail?: Express.Multer.File[];
