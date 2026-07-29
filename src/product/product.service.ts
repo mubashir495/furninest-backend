@@ -317,32 +317,27 @@ export class ProductService {
     };
   }
 
-  async getCatalogTree() {
-    const categories = await this.categoryModel.find().sort({ name: 1 }).lean();
+ async getCatalogTree() {
+  const categories = await this.categoryModel
+    .find()
+    .sort({ name: 1 })
+    .lean();
 
-    const tree = await Promise.all(
-      categories.map(async (category) => {
-        const subCategories = await this.subCategoryModel
-          .find({ category: category._id })
-          .sort({ name: 1 })
-          .lean();
+  const subCategories = await this.subCategoryModel
+    .find()
+    .sort({ name: 1 })
+    .lean();
 
-        const subCategoriesWithProducts = await Promise.all(
-          subCategories.map(async (subCategory) => {
-            const products = await this.productModel
-              .find({ subCategory: subCategory._id, isActive: true })
-              .select('name slug price discount thumbnailImage images color size stock')
-              .sort({ name: 1 })
-              .lean();
+  const tree = categories.map((category) => ({
+    ...category,
+    subCategories: subCategories.filter(
+      (sub) => sub.category.toString() === category._id.toString(),
+    ),
+  }));
 
-            return { ...subCategory, products };
-          }),
-        );
-
-        return { ...category, subCategories: subCategoriesWithProducts };
-      }),
-    );
-
-    return { success: true, data: tree };
-  }
+  return {
+    success: true,
+    data: tree,
+  };
+}
 }
