@@ -40,8 +40,13 @@ export class OrderController {
   }
 
   @Get(':id')
-  findOne(@CurrentUser('id') userId: string, @Param('id') id: string) {
-    return this.orderService.findOne(userId, id);
+  findOne(
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') role: string,
+    @Param('id') id: string,
+  ) {
+    const isAdmin = role === 'ADMIN';
+    return this.orderService.findOne(userId, id, isAdmin);
   }
 
   @Patch(':id/cancel')
