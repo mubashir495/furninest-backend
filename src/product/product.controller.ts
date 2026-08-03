@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   UseInterceptors,
   UploadedFiles,
@@ -29,8 +30,8 @@ export class ProductController {
   // ---------- Public Routes ----------
 
   @Get()
-  findAll() {
-    return this.productService.findAll();
+  findAll(@Query('isAdmin') isAdmin?: string) {
+    return this.productService.findAll(isAdmin === 'true');
   }
 
   @Get('catalog-tree')

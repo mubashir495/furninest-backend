@@ -20,6 +20,7 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import { MailService } from '../mail/mail.service';
 
 function hashToken(token: string): string {
@@ -324,6 +325,85 @@ export class AuthService {
     return {
       success: true,
       message: 'Password changed successfully. Please login again.',
+    };
+  }
+
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const user = await this.userModel.findById(userId);
+
+    if (!user) {
+      throw new NotFoundException('User not found.');
+    }
+
+    if (dto.fullName !== undefined) user.fullName = dto.fullName.trim();
+    if (dto.phone !== undefined) user.phone = dto.phone.trim();
+
+    await user.save();
+
+    return {
+      success: true,
+      message: 'Profile updated successfully.',
+      data: {
+        id: user._id,
+        fullName: user.fullName,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+      },
+    };
+  }
+
+  async getUsers(page = 1, limit = 20, search?: string) {
+    const skip = (page - 1) * limit;
+    const filter: Record<string, unknown> = {};
+
+    if (search) {
+      filter.$or = [
+        { fullName: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    const [users, total] = await Promise.all([
+      this.userModel
+        .find(filter)
+        .select('-password -refreshToken -emailVerificationToken -emailVerificationExpires -passwordResetToken -passwordResetExpires')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      this.userModel.countDocuments(filter),
+    ]);
+
+    return {
+      success: true,
+      data: users,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async updateUserStatus(targetUserId: string, isActive: boolean) {
+    const user = await this.userModel.findById(targetUserId);
+
+    if (!user) {
+      throw new NotFoundException('User not found.');
+    }
+
+    if (user.role === UserRole.ADMIN) {
+      throw new BadRequestException('Cannot change the status of an admin account.');
+    }
+
+    user.isActive = isActive;
+    await user.save();
+
+    return {
+      success: true,
+      message: `User ${isActive ? 'activated' : 'deactivated'} successfully.`,
+      data: { id: user._id, isActive: user.isActive },
     };
   }
 }

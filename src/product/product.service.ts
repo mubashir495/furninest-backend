@@ -105,9 +105,11 @@ export class ProductService {
     };
   }
 
-  async findAll() {
+  async findAll(isAdmin = false) {
+    const filter = isAdmin ? {} : { isActive: true };
+
     const products = await this.productModel
-      .find()
+      .find(filter)
       .select(PUBLIC_FIELDS)
       .populate('category', 'name slug')
       .populate('subCategory', 'name slug')

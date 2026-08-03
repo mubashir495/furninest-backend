@@ -103,11 +103,11 @@ export class OrderService {
     );
   }
 
-  // ✅ درست شدہ createFromCart
+  // ✅ createFromCart — builds an order from the user's active cart
   async createFromCart(userId: string, dto: CreateOrderDto) {
     const userObjectId = this.toObjectId(userId);
 
-    // 🔑 کارٹ کو ObjectId کے ساتھ ڈھونڈیں
+    // Find the user's cart
     const cart = await this.cartModel.findOne({ user: userObjectId });
     if (!cart) {
       throw new BadRequestException('Your cart is empty.');
@@ -193,7 +193,6 @@ export class OrderService {
     };
   }
 
-  // ✅ درست شدہ findMyOrders
   async findMyOrders(userId: string) {
     const userObjectId = this.toObjectId(userId);
     const orders = await this.orderModel
@@ -204,7 +203,7 @@ export class OrderService {
     return { success: true, data: orders };
   }
 
-  // ✅ findOne (کسی تبدیلی کی ضرورت نہیں، کیونکہ owner چیک toString سے ہو رہا ہے)
+  // findOne — owner check uses toString() comparison
   async findOne(userId: string, orderId: string, isAdmin = false) {
     const order = await this.orderModel
       .findById(orderId)
@@ -226,7 +225,7 @@ export class OrderService {
     };
   }
 
-  // ✅ cancelOrder (بھی ٹھیک ہے، toString سے موازنہ کر رہے ہیں)
+  // cancelOrder — only PENDING or PROCESSING orders can be cancelled
   async cancelOrder(userId: string, orderId: string) {
     const order = await this.orderModel.findById(orderId);
 
