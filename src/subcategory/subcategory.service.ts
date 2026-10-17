@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import * as mongoose from 'mongoose';
 import { SubCategory, SubCategoryDocument } from './schema/subcategory.schema';
 import { Category, CategoryDocument } from '../category/schema/category.schema';
 import { CreateSubCategoryDto } from './dto/create-subcategory.dto';
@@ -38,6 +39,10 @@ export class SubCategoryService {
     return slug;
   }
 
+  private toObjectId(id: string) {
+    return new mongoose.Schema.Types.ObjectId(id);
+  }
+
   private async assertCategoryExists(categoryId: string) {
     const category = await this.categoryModel.findById(categoryId);
     if (!category) {
@@ -48,10 +53,11 @@ export class SubCategoryService {
 
   async create(dto: CreateSubCategoryDto) {
     await this.assertCategoryExists(dto.category);
+    const categoryObjectId = this.toObjectId(dto.category);
 
     const existing = await this.subCategoryModel.findOne({
       name: dto.name.trim(),
-      category: dto.category,
+      category: categoryObjectId,
     });
     if (existing) {
       throw new ConflictException('This subcategory already exists under the selected category.');
@@ -85,7 +91,7 @@ export class SubCategoryService {
     await this.assertCategoryExists(categoryId);
 
     const subCategories = await this.subCategoryModel
-      .find({ category: categoryId })
+      .find({ category: this.toObjectId(categoryId) })
       .sort({ created_date: -1 });
 
     return { success: true, data: subCategories };
@@ -121,14 +127,18 @@ export class SubCategoryService {
 
     if (dto.category) {
       await this.assertCategoryExists(dto.category);
-      subCategory.category = dto.category as any;
+      subCategory.category = this.toObjectId(dto.category);
     }
 
     if (dto.name && dto.name.trim() !== subCategory.name) {
+      const categoryObjectId = dto.category
+        ? this.toObjectId(dto.category)
+        : subCategory.category;
+
       const existing = await this.subCategoryModel.findOne({
         name: dto.name.trim(),
-        category: dto.category ?? subCategory.category,
-        _id: { $ne: id },
+        category: categoryObjectId,
+        _id: { $ne: new mongoose.Schema.Types.ObjectId(id) },
       });
       if (existing) {
         throw new ConflictException('This subcategory already exists under the selected category.');
