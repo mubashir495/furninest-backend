@@ -131,7 +131,7 @@ export class AuthController {
       timestamp: new Date().toISOString(),
       environment: process.env.NODE_ENV,
       mongodb: process.env.MONGODB_URI ? 'Configured' : 'Not configured',
-      message: 'FurniNest Auth API is running!',
+      message: 'LUXA FURNITURE Auth API is running!',
     };
   }
 }

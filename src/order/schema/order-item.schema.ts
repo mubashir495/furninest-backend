@@ -1,15 +1,16 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import { Document } from 'mongoose';
+import * as mongoose from 'mongoose';
 
 export type OrderItemDocument = OrderItem & Document;
 
 @Schema({ timestamps: { createdAt: 'created_date', updatedAt: 'updated_date' } })
 export class OrderItem {
-  @Prop({ type: Types.ObjectId, ref: 'Order', required: true, index: true })
-  order: Types.ObjectId;
+  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Order', required: true, index: true })
+  order: mongoose.Schema.Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Product', required: true, index: true })
-  product: Types.ObjectId;
+  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true, index: true })
+  product: mongoose.Schema.Types.ObjectId;
 
   @Prop({ required: true, trim: true })
   productName: string;

@@ -2,7 +2,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Model, Types } from 'mongoose';
+import { Model } from 'mongoose';
+import * as mongoose from 'mongoose';
 import { InjectModel } from '@nestjs/mongoose';
 import { Product, ProductDocument } from './schema/product.schema';
 import { Category, CategoryDocument } from '../category/schema/category.schema';
@@ -267,7 +268,7 @@ export class ProductService {
 
     if (dto.suggestionItems) {
       product.suggestionItems = dto.suggestionItems.map(
-        (itemId) => new Types.ObjectId(itemId),
+        (itemId) => new (mongoose as any).Types.ObjectId(itemId),
       );
     }
 

@@ -5,7 +5,8 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Model } from 'mongoose';
+import * as mongoose from 'mongoose';
 import { Order, OrderDocument, OrderStatus } from './schema/order.schema';
 import { OrderItem, OrderItemDocument } from './schema/order-item.schema';
 import {
@@ -40,11 +41,11 @@ export class OrderService {
     private readonly productModel: Model<ProductDocument>,
   ) {}
 
-  private toObjectId(id: string): Types.ObjectId {
-    if (!Types.ObjectId.isValid(id)) {
+  private toObjectId(id: string): mongoose.Schema.Types.ObjectId {
+    if (!mongoose.isValidObjectId(id)) {
       throw new BadRequestException('Invalid ID format');
     }
-    return new Types.ObjectId(id);
+    return new (mongoose as any).Types.ObjectId(id);
   }
 
   private async generateOrderNumber(): Promise<string> {
@@ -66,7 +67,7 @@ export class OrderService {
   private async resolveShippingAddress(
     userId: string,
     dto: CreateOrderDto,
-  ): Promise<Types.ObjectId> {
+  ): Promise<mongoose.Schema.Types.ObjectId> {
     if (dto.shippingAddressId) {
       const existingAddress = await this.shippingAddressModel.findById(
         dto.shippingAddressId,
@@ -80,7 +81,7 @@ export class OrderService {
         throw new ForbiddenException('You cannot use this address.');
       }
 
-      return existingAddress._id as Types.ObjectId;
+      return existingAddress._id as mongoose.Schema.Types.ObjectId;
     }
 
     if (dto.shippingAddress) {
@@ -95,7 +96,7 @@ export class OrderService {
       });
       await newAddress.save();
 
-      return newAddress._id as Types.ObjectId;
+      return newAddress._id as mongoose.Schema.Types.ObjectId;
     }
 
     throw new BadRequestException(

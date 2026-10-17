@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Model } from 'mongoose';
+import * as mongoose from 'mongoose';
 import { ShippingAddress, ShippingAddressDocument } from './schema/shipping-address.schema';
 import { CreateShippingAddressDto } from './dto/create-shipping-address.dto';
 import { UpdateShippingAddressDto } from './dto/update-shipping-address.dto';
@@ -14,7 +15,7 @@ export class ShippingAddressService {
 
   async findAll(userId: string) {
     this.validateObjectId(userId);
-    const objectId = new Types.ObjectId(userId);
+    const objectId = new (mongoose as any).Types.ObjectId(userId);
     const data = await this.shippingAddressModel.find({ user: objectId }).exec();
     return { success: true, data };
   }
@@ -23,8 +24,8 @@ export class ShippingAddressService {
     this.validateObjectId(userId);
     this.validateObjectId(id);
     const data = await this.shippingAddressModel.findOne({
-      _id: new Types.ObjectId(id),
-      user: new Types.ObjectId(userId),
+      _id: new (mongoose as any).Types.ObjectId(id),
+      user: new (mongoose as any).Types.ObjectId(userId),
     }).exec();
     if (!data) {
       throw new NotFoundException('Address not found');
@@ -34,7 +35,7 @@ export class ShippingAddressService {
 
   async create(userId: string, dto: CreateShippingAddressDto) {
     this.validateObjectId(userId);
-    const objectId = new Types.ObjectId(userId);
+    const objectId = new (mongoose as any).Types.ObjectId(userId);
     const newAddress = new this.shippingAddressModel({
       ...dto,
       user: objectId,
@@ -47,7 +48,7 @@ export class ShippingAddressService {
     this.validateObjectId(userId);
     this.validateObjectId(id);
     const data = await this.shippingAddressModel.findOneAndUpdate(
-      { _id: new Types.ObjectId(id), user: new Types.ObjectId(userId) },
+      { _id: new (mongoose as any).Types.ObjectId(id), user: new (mongoose as any).Types.ObjectId(userId) },
       dto,
       { new: true },
     ).exec();
@@ -62,12 +63,12 @@ export class ShippingAddressService {
     this.validateObjectId(id);
 
     await this.shippingAddressModel.updateMany(
-      { user: new Types.ObjectId(userId) },
+      { user: new (mongoose as any).Types.ObjectId(userId) },
       { isDefault: false },
     ).exec();
 
     const data = await this.shippingAddressModel.findOneAndUpdate(
-      { _id: new Types.ObjectId(id), user: new Types.ObjectId(userId) },
+      { _id: new (mongoose as any).Types.ObjectId(id), user: new (mongoose as any).Types.ObjectId(userId) },
       { isDefault: true },
       { new: true },
     ).exec();
@@ -81,8 +82,8 @@ export class ShippingAddressService {
     this.validateObjectId(userId);
     this.validateObjectId(id);
     const result = await this.shippingAddressModel.findOneAndDelete({
-      _id: new Types.ObjectId(id),
-      user: new Types.ObjectId(userId),
+      _id: new (mongoose as any).Types.ObjectId(id),
+      user: new (mongoose as any).Types.ObjectId(userId),
     }).exec();
     if (!result) {
       throw new NotFoundException('Address not found');
@@ -91,7 +92,7 @@ export class ShippingAddressService {
   }
 
   private validateObjectId(id: string) {
-    if (!Types.ObjectId.isValid(id)) {
+    if (!mongoose.isValidObjectId(id)) {
       throw new BadRequestException('Invalid ID format');
     }
   }

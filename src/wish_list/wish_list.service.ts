@@ -5,7 +5,8 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Model } from 'mongoose';
+import * as mongoose from 'mongoose';
 import { Wishlist, WishlistDocument } from './schema/wishlist.schema';
 import { Product, ProductDocument } from '../product/schema/product.schema';
 import { AddWishlistDto } from './dto/create-wish_list.dto';
@@ -22,10 +23,10 @@ export class WishlistService {
 
   // ہیلپر: ObjectId کی تصدیق
   private validateObjectId(id: string) {
-    if (!Types.ObjectId.isValid(id)) {
+    if (!mongoose.isValidObjectId(id)) {
       throw new BadRequestException('Invalid ID format');
     }
-    return new Types.ObjectId(id);
+    return new (mongoose as any).Types.ObjectId(id);
   }
 
   // ✅ Add to wishlist

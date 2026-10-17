@@ -8,7 +8,10 @@ import {
   ShippingAddressSchema,
 } from '../shipping-address/schema/shipping-address.schema';
 import { Cart, CartSchema } from '../cart/schema/cart.schema';
-import { CartItem, CartItemSchema } from '../cart/schema/cart-item.schema';
+import {
+  CartItem as CartEntry,
+  CartItemSchema as CartEntrySchema,
+} from '../cart/schema/cart-item.schema';
 import { Product, ProductSchema } from '../product/schema/product.schema';
 
 import { OrderService } from './order.service';
@@ -21,7 +24,7 @@ import { OrderController } from './order.controller';
       { name: OrderItem.name, schema: OrderItemSchema },
       { name: ShippingAddress.name, schema: ShippingAddressSchema },
       { name: Cart.name, schema: CartSchema },
-      { name: CartItem.name, schema: CartItemSchema },
+      { name: CartEntry.name, schema: CartEntrySchema },
       { name: Product.name, schema: ProductSchema },
     ]),
   ],

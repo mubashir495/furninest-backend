@@ -31,4 +31,9 @@ export class CreateOrderDto {
   @IsString()
   @MaxLength(300)
   notes?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  idempotencyKey?: string;
 }

@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import { Document } from 'mongoose';
+import * as mongoose from 'mongoose';
 
 export type SubCategoryDocument = SubCategory & Document;
 
@@ -11,8 +12,8 @@ export class SubCategory {
   @Prop({ required: true, unique: true, index: true })
   slug: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'Category', required: true, index: true })
-  category: Types.ObjectId;
+  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true, index: true })
+  category: mongoose.Schema.Types.ObjectId;
 }
 
 export const SubCategorySchema = SchemaFactory.createForClass(SubCategory);

@@ -26,10 +26,10 @@ export class MailService {
       await this.transporter.sendMail({
         from: this.config.get('MAIL_FROM'),
         to,
-        subject: 'Verify your FurniNest account',
+        subject: 'Verify your LUXA FURNITURE account',
         html: `
           <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#FBF7F2;border-radius:12px;">
-            <h2 style="color:#3D2B1F;">FurniNest</h2>
+            <h2 style="color:#1F3A2E;">LUXA FURNITURE</h2>
             <p>Hi ${fullName},</p>
             <p>Please confirm your email address to activate your account.</p>
             <a href="${url}" style="display:inline-block;background:#8B5E34;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;margin-top:12px;">
@@ -53,10 +53,10 @@ export class MailService {
       await this.transporter.sendMail({
         from: this.config.get('MAIL_FROM'),
         to,
-        subject: 'Reset your FurniNest password',
+        subject: 'Reset your LUXA FURNITURE password',
         html: `
           <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#FBF7F2;border-radius:12px;">
-            <h2 style="color:#3D2B1F;">FurniNest</h2>
+            <h2 style="color:#1F3A2E;">LUXA FURNITURE</h2>
             <p>Hi ${fullName},</p>
             <p>We received a request to reset your password. Click below to choose a new one.</p>
             <a href="${url}" style="display:inline-block;background:#8B5E34;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;margin-top:12px;">

@@ -4,7 +4,8 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Model } from 'mongoose';
+import * as mongoose from 'mongoose';
 import { Cart, CartDocument } from './schema/cart.schema';
 import { CartItem, CartItemDocument } from './schema/cart-item.schema';
 import { Product, ProductDocument } from '../product/schema/product.schema';
@@ -25,11 +26,11 @@ export class CartService {
   ) {}
 
   // 🔧 ہیلپر: userId کو ObjectId میں تبدیل کریں
-  private toObjectId(id: string): Types.ObjectId {
-    if (!Types.ObjectId.isValid(id)) {
+  private toObjectId(id: string): mongoose.Schema.Types.ObjectId {
+    if (!mongoose.isValidObjectId(id)) {
       throw new BadRequestException('Invalid ID format');
     }
-    return new Types.ObjectId(id);
+    return new (mongoose as any).Types.ObjectId(id);
   }
 
     private async getOrCreateCart(userId: string): Promise<CartDocument> {

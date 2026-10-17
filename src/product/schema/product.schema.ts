@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import { Document } from 'mongoose';
+import * as mongoose from 'mongoose';
 
 export type ProductDocument = Product & Document;
 
@@ -52,27 +53,27 @@ export class Product {
   size: string[];
 
   @Prop({
-    type: Types.ObjectId,
+    type: mongoose.Schema.Types.ObjectId,
     ref: 'SubCategory',
     required: true,
     index: true,
   })
-  subCategory: Types.ObjectId;
+  subCategory: mongoose.Schema.Types.ObjectId;
 
   @Prop({
-    type: Types.ObjectId,
+    type: mongoose.Schema.Types.ObjectId,
     ref: 'Category',
     required: true,
     index: true,
   })
-  category: Types.ObjectId;
+  category: mongoose.Schema.Types.ObjectId;
 
   @Prop({
-    type: [Types.ObjectId],
+    type: [mongoose.Schema.Types.ObjectId],
     ref: 'Product',
     default: [],
   })
-  suggestionItems: Types.ObjectId[];
+  suggestionItems: mongoose.Schema.Types.ObjectId[];
 
   @Prop({ default: true })
   isActive: boolean;
