@@ -15,14 +15,40 @@ export class CartItem {
   @Prop({ required: true, min: 1, default: 1 })
   quantity: number;
 
- @Prop({ required: true, min: 0 })
+  @Prop({ required: true, min: 0 })
   price: number;
+
+  // ─── Variant fields (optional — null for legacy/non-variant products) ───
+
+  /** The variant's _id as a string. Null means the top-level product was added (no variant). */
+  @Prop({ type: String, default: null, index: true })
+  variantId: string | null;
+
+  /** Human-readable snapshot: 'configName / colorName' */
+  @Prop({ type: String, default: null })
+  variantName: string | null;
+
+  /** Snapshot of the selected configuration name e.g. '3-Seater' */
+  @Prop({ type: String, default: null })
+  selectedConfig: string | null;
+
+  /** Snapshot of the selected colour name e.g. 'Grey' */
+  @Prop({ type: String, default: null })
+  selectedColor: string | null;
 }
 
 export const CartItemSchema = SchemaFactory.createForClass(CartItem);
 
-// Prevent duplicate rows for the same product in the same cart
-CartItemSchema.index({ cart: 1, product: 1 }, { unique: true });
+/**
+ * Unique constraint: one row per (cart, product, variantId) triplet.
+ * This allows different variants of the same parent product to coexist as
+ * separate cart lines (e.g. 3-Seater Grey + 5-Seater Beige in the same cart).
+ *
+ * NOTE: If you have an existing `{ cart: 1, product: 1 }` unique index in MongoDB,
+ * run this in the MongoDB shell to remove it before deploying:
+ *   db.cartitems.dropIndex({ cart: 1, product: 1 })
+ */
+CartItemSchema.index({ cart: 1, product: 1, variantId: 1 }, { unique: true });
 
 CartItemSchema.virtual('subtotal').get(function (this: CartItem) {
   return Math.round(this.price * this.quantity);

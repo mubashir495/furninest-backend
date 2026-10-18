@@ -4,13 +4,18 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import * as mongoose from 'mongoose';
+import { Model, Schema } from 'mongoose';
+
+
 import { Cart, CartDocument } from './schema/cart.schema';
 import { CartItem, CartItemDocument } from './schema/cart-item.schema';
-import { Product, ProductDocument } from '../product/schema/product.schema';
+import { Product, ProductDocument, ProductVariant } from '../product/schema/product.schema';
 import { AddCartItemDto } from './dto/create-cart.dto';
 import { UpdateCartItemDto } from './dto/update-cart-item.dto';
+
+
+// Runtime helper � avoids TS namespace import issues with mongoose v9
+const isValidObjectIdHelper = (id: any): boolean => /^[0-9a-fA-F]{24}$/.test(String(id));
 
 @Injectable()
 export class CartService {
@@ -25,15 +30,16 @@ export class CartService {
     private readonly productModel: Model<ProductDocument>,
   ) {}
 
-  // 🔧 ہیلپر: userId کو ObjectId میں تبدیل کریں
-  private toObjectId(id: string): mongoose.Schema.Types.ObjectId {
-    if (!mongoose.isValidObjectId(id)) {
+  // ─── Helpers ───────────────────────────────────────────────────────────────
+
+  private toObjectId(id: string): any {
+    if (!isValidObjectIdHelper(id)) {
       throw new BadRequestException('Invalid ID format');
     }
-    return new (mongoose as any).Types.ObjectId(id);
+    return new Schema.Types.ObjectId(id);
   }
 
-    private async getOrCreateCart(userId: string): Promise<CartDocument> {
+  private async getOrCreateCart(userId: string): Promise<CartDocument> {
     const userObjectId = this.toObjectId(userId);
 
     let cart = await this.cartModel.findOne({ user: userObjectId });
@@ -59,6 +65,37 @@ export class CartService {
     };
   }
 
+  /** Resolve a variant from a product by its _id string. Throws if not found or inactive. */
+  private resolveVariant(
+    product: ProductDocument,
+    variantId: string,
+  ): ProductVariant {
+    const variant = (product.variants as ProductVariant[]).find(
+      (v) => (v as any)._id?.toString() === variantId,
+    );
+    if (!variant) {
+      throw new NotFoundException('Variant not found for this product.');
+    }
+    if (!variant.isActive) {
+      throw new BadRequestException('This variant is currently unavailable.');
+    }
+    return variant;
+  }
+
+  /** Get the effective unit price for a variant (salePrice if set and lower). */
+  private getVariantPrice(variant: ProductVariant): number {
+    if (
+      variant.salePrice !== null &&
+      variant.salePrice !== undefined &&
+      variant.salePrice < variant.price
+    ) {
+      return variant.salePrice;
+    }
+    return variant.price;
+  }
+
+  // ─── Public Methods ────────────────────────────────────────────────────────
+
   async getCart(userId: string) {
     const cart = await this.getOrCreateCart(userId);
 
@@ -66,7 +103,7 @@ export class CartService {
       .find({ cart: cart._id })
       .populate({
         path: 'product',
-        select: 'name slug price discount thumbnailImage stock isActive',
+        select: 'name slug price discount thumbnailImage stock isActive variants',
       })
       .sort({ created_date: -1 });
 
@@ -94,19 +131,80 @@ export class CartService {
     }
 
     const quantity = dto.quantity ?? 1;
+    const cart = await this.getOrCreateCart(userId);
 
+    // ─── Variant path ──────────────────────────────────────────────────────
+    if (dto.variantId) {
+      const variant = this.resolveVariant(product, dto.variantId);
+
+      if (variant.stock < quantity) {
+        throw new BadRequestException(
+          `Only ${variant.stock} unit(s) of this variant are available.`,
+        );
+      }
+
+      const variantName = [variant.configName, variant.colorName]
+        .filter(Boolean)
+        .join(' / ');
+
+      // Check for existing cart item with the same product + variant
+      const existingItem = await this.cartItemModel.findOne({
+        cart: cart._id,
+        product: productObjectId,
+        variantId: dto.variantId,
+      });
+
+      if (existingItem) {
+        const newQuantity = existingItem.quantity + quantity;
+
+        if (variant.stock < newQuantity) {
+          throw new BadRequestException(
+            `Only ${variant.stock} unit(s) of this variant are available.`,
+          );
+        }
+
+        existingItem.quantity = newQuantity;
+        existingItem.price = this.getVariantPrice(variant);
+        await existingItem.save();
+
+        return {
+          success: true,
+          message: 'Cart item quantity updated.',
+          data: existingItem,
+        };
+      }
+
+      const cartItem = new this.cartItemModel({
+        cart: cart._id,
+        product: productObjectId,
+        quantity,
+        price: this.getVariantPrice(variant),
+        variantId: dto.variantId,
+        variantName,
+        selectedConfig: variant.configName,
+        selectedColor: variant.colorName || null,
+      });
+      await cartItem.save();
+
+      return {
+        success: true,
+        message: 'Product added to cart.',
+        data: cartItem,
+      };
+    }
+
+    // ─── Legacy path (no variant) ──────────────────────────────────────────
     if (product.stock < quantity) {
       throw new BadRequestException(
         `Only ${product.stock} unit(s) available in stock.`,
       );
     }
 
-    const cart = await this.getOrCreateCart(userId);
-
-    // موجودہ آئٹم چیک کریں
+    // موجودہ آئٹم چیک کریں (existing item check)
     const existingItem = await this.cartItemModel.findOne({
       cart: cart._id,
       product: productObjectId,
+      variantId: null,
     });
 
     if (existingItem) {
@@ -134,6 +232,7 @@ export class CartService {
       product: productObjectId,
       quantity,
       price: (product as any).finalPrice ?? product.price,
+      variantId: null,
     });
     await cartItem.save();
 
@@ -152,9 +251,13 @@ export class CartService {
     const cart = await this.getOrCreateCart(userId);
     const productObjectId = this.toObjectId(productId);
 
+    // Support variantId on the update DTO if present
+    const variantId = (dto as any).variantId ?? null;
+
     const cartItem = await this.cartItemModel.findOne({
       cart: cart._id,
       product: productObjectId,
+      variantId,
     });
 
     if (!cartItem) {
@@ -166,14 +269,25 @@ export class CartService {
       throw new NotFoundException('Product not found.');
     }
 
-    if (product.stock < dto.quantity) {
-      throw new BadRequestException(
-        `Only ${product.stock} unit(s) available in stock.`,
-      );
+    if (variantId) {
+      const variant = this.resolveVariant(product, variantId);
+      if (variant.stock < dto.quantity) {
+        throw new BadRequestException(
+          `Only ${variant.stock} unit(s) of this variant are available.`,
+        );
+      }
+      cartItem.quantity = dto.quantity;
+      cartItem.price = this.getVariantPrice(variant);
+    } else {
+      if (product.stock < dto.quantity) {
+        throw new BadRequestException(
+          `Only ${product.stock} unit(s) available in stock.`,
+        );
+      }
+      cartItem.quantity = dto.quantity;
+      cartItem.price = (product as any).finalPrice ?? product.price;
     }
 
-    cartItem.quantity = dto.quantity;
-    cartItem.price = (product as any).finalPrice ?? product.price;
     await cartItem.save();
 
     return {
@@ -183,14 +297,23 @@ export class CartService {
     };
   }
 
-  async removeItem(userId: string, productId: string) {
+  async removeItem(userId: string, productId: string, variantId?: string) {
     const cart = await this.getOrCreateCart(userId);
     const productObjectId = this.toObjectId(productId);
 
-    const deleted = await this.cartItemModel.findOneAndDelete({
+    const query: Record<string, any> = {
       cart: cart._id,
       product: productObjectId,
-    });
+    };
+
+    // Match on variantId when provided; otherwise remove the legacy (non-variant) item
+    if (variantId !== undefined) {
+      query.variantId = variantId;
+    } else {
+      query.variantId = null;
+    }
+
+    const deleted = await this.cartItemModel.findOneAndDelete(query);
 
     if (!deleted) {
       throw new NotFoundException('Item not found in your cart.');

@@ -42,12 +42,18 @@ export class CartController {
     return this.cartService.updateItem(userId, productId, dto);
   }
 
+  /**
+   * DELETE /cart/items/:productId
+   * Optional body: { variantId: string } — when removing a variant-specific item.
+   * Omit variantId body to remove a legacy (no-variant) item.
+   */
   @Delete('items/:productId')
   removeItem(
     @CurrentUser('id') userId: string,
     @Param('productId') productId: string,
+    @Body('variantId') variantId?: string,
   ) {
-    return this.cartService.removeItem(userId, productId);
+    return this.cartService.removeItem(userId, productId, variantId);
   }
 
   @Delete()
