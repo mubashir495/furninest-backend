@@ -9,6 +9,7 @@ import {
   Min,
   Max,
   MaxLength,
+  ValidateNested,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 
@@ -22,6 +23,21 @@ const parseArrayField = ({ value }: { value: any }) => {
       // not JSON, fall back to comma-split
     }
     return value.split(',').map((v) => v.trim()).filter(Boolean);
+  }
+  return value;
+};
+
+export class SpecificationDto {
+  @IsString() @IsNotEmpty() @MaxLength(80)
+  label: string;
+
+  @IsString() @IsNotEmpty() @MaxLength(300)
+  value: string;
+}
+
+const parseJsonArray = ({ value }: { value: any }) => {
+  if (typeof value === 'string') {
+    try { return JSON.parse(value); } catch { return value; }
   }
   return value;
 };
@@ -90,4 +106,59 @@ export class CreateProductDto {
   @IsBoolean()
   @Transform(({ value }) => value === 'true' || value === true)
   isActive?: boolean;
+
+  // ── New optional fields (all backward compatible) ─────────────────────────
+  @IsOptional() @IsString() @MaxLength(100)
+  brand?: string;
+
+  @IsOptional()
+  @Transform(parseArrayField)
+  @IsArray()
+  @IsString({ each: true })
+  features?: string[];
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    // Accept JSON string (from FormData) or a plain array
+    let arr: any[];
+    if (Array.isArray(value)) {
+      arr = value;
+    } else if (typeof value === 'string') {
+      try { arr = JSON.parse(value); } catch { return []; }
+    } else {
+      return [];
+    }
+    if (!Array.isArray(arr)) return [];
+    // Explicitly instantiate SpecificationDto so @Type + whitelist work correctly
+    return arr.map((item: any) => {
+      const dto = new SpecificationDto();
+      dto.label = typeof item?.label === 'string' ? item.label : '';
+      dto.value = typeof item?.value === 'string' ? item.value : '';
+      return dto;
+    });
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SpecificationDto)
+  specifications?: SpecificationDto[];
+
+  @IsOptional() @IsString() @MaxLength(500)
+  material?: string;
+
+  @IsOptional() @IsString() @MaxLength(500)
+  dimensions?: string;
+
+  @IsOptional() @IsString() @MaxLength(2000)
+  careInstructions?: string;
+
+  @IsOptional() @IsString() @MaxLength(70)
+  seoTitle?: string;
+
+  @IsOptional() @IsString() @MaxLength(170)
+  seoDescription?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => value === 'true' || value === true)
+  isFeatured?: boolean;
 }

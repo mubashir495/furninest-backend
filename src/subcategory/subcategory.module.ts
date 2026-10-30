@@ -4,6 +4,7 @@ import { SubCategoryController } from './subcategory.controller';
 import { SubCategoryService } from './subcategory.service';
 import { SubCategory, SubCategorySchema } from './schema/subcategory.schema';
 import { Category, CategorySchema } from '../category/schema/category.schema';
+import { RevalidationModule } from '../revalidation/revalidation.module';
 
 @Module({
   imports: [

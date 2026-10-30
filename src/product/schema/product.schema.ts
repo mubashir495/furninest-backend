@@ -166,9 +166,66 @@ export class Product {
 
   @Prop({ default: true })
   isActive: boolean;
+
+  // ── New optional fields ───────────────────────────────────────────────────
+  @Prop({ trim: true, default: '' })
+  brand: string;
+
+  @Prop({ type: [String], default: [] })
+  features: string[];
+
+  @Prop({
+    type: [{ label: { type: String, trim: true }, value: { type: String, trim: true } }],
+    _id: false,
+    default: [],
+  })
+  specifications: { label: string; value: string }[];
+
+  @Prop({ trim: true, default: '' })
+  material: string;
+
+  @Prop({ trim: true, default: '' })
+  dimensions: string;
+
+  @Prop({ trim: true, default: '' })
+  careInstructions: string;
+
+  @Prop({ trim: true, default: '', maxlength: 70 })
+  seoTitle: string;
+
+  @Prop({ trim: true, default: '', maxlength: 170 })
+  seoDescription: string;
+
+  @Prop({ default: false, index: true })
+  isFeatured: boolean;
+
+  /** Archived products are hidden everywhere publicly but kept for order history. */
+  @Prop({ default: false, index: true })
+  isArchived: boolean;
+
+  @Prop({ type: Date, default: null })
+  archivedAt: Date | null;
+
+  // ── Sales & Reviews (cached aggregates) ──────────────────────────────────────
+
+  /**
+   * Total units sold across all completed orders.
+   * Auto-incremented on order completion. Admin can also set manually.
+   */
+  @Prop({ min: 0, default: 0, index: true })
+  totalSold: number;
+
+  /** Cached average rating (1–5) computed from active reviews. */
+  @Prop({ min: 0, max: 5, default: 0 })
+  avgRating: number;
+
+  /** Cached count of active reviews. */
+  @Prop({ min: 0, default: 0 })
+  totalReviews: number;
 }
 
 export const ProductSchema = SchemaFactory.createForClass(Product);
+ProductSchema.index({ isActive: 1, isArchived: 1, created_date: -1 });
 
 // Virtual: top-level finalPrice (backward-compat for products without variants)
 ProductSchema.virtual('finalPrice').get(function (this: Product) {

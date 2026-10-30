@@ -12,6 +12,7 @@ import {
 } from '../subcategory/schema/subcategory.schema';
 
 import { UploadModule } from '../upload/upload.module';
+import { RevalidationModule } from '../revalidation/revalidation.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { UploadModule } from '../upload/upload.module';
     ]),
 
     UploadModule,
+    RevalidationModule,
   ],
   controllers: [ProductController],
   providers: [ProductService],

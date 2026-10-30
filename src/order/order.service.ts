@@ -5,7 +5,8 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Schema } from 'mongoose';
+import { Model } from 'mongoose';
+import * as mongoose from 'mongoose';
 
 import { Order, OrderDocument, OrderStatus } from './schema/order.schema';
 import { OrderItem, OrderItemDocument } from './schema/order-item.schema';
@@ -16,12 +17,16 @@ import {
 import { Cart, CartDocument } from '../cart/schema/cart.schema';
 import { CartItem, CartItemDocument } from '../cart/schema/cart-item.schema';
 import { Product, ProductDocument, ProductVariant } from '../product/schema/product.schema';
+import { RevalidationService } from '../revalidation/revalidation.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 
-
-// Runtime helper � avoids TS namespace import issues with mongoose v9
-const isValidObjectIdHelper = (id: any): boolean => /^[0-9a-fA-F]{24}$/.test(String(id));
+// Statuses where a customer can still cancel their order
+// Once SHIPPED, customer cannot cancel — must contact support
+const CUSTOMER_CANCELLABLE_STATUSES: OrderStatus[] = [
+  OrderStatus.PENDING,
+  OrderStatus.PROCESSING,
+];
 
 @Injectable()
 export class OrderService {
@@ -43,13 +48,14 @@ export class OrderService {
 
     @InjectModel(Product.name)
     private readonly productModel: Model<ProductDocument>,
+    private readonly revalidationService: RevalidationService,
   ) {}
 
   private toObjectId(id: string): any {
-    if (!isValidObjectIdHelper(id)) {
+    if (!mongoose.isValidObjectId(id)) {
       throw new BadRequestException('Invalid ID format');
     }
-    return new Schema.Types.ObjectId(id);
+    return new (mongoose as any).Types.ObjectId(id);
   }
 
   private async generateOrderNumber(): Promise<string> {
@@ -145,7 +151,7 @@ export class OrderService {
     variantId: string | null,
     quantity: number,
   ): Promise<void> {
-    if (variantId && isValidObjectIdHelper(variantId)) {
+    if (variantId && mongoose.isValidObjectId(variantId)) {
       await this.productModel.updateOne(
         { _id: productId, 'variants._id': this.toObjectId(variantId) },
         { $inc: { 'variants.$.stock': quantity } },
@@ -217,11 +223,26 @@ export class OrderService {
     const shippingAddressId = await this.resolveShippingAddress(userId, dto);
     const orderNumber = await this.generateOrderNumber();
 
+    // Live authoritative price check against MongoDB to prevent relying on stale public caches
+    const getAuthoritativePrice = (prod: ProductDocument, variantId?: string | null): number => {
+      if (variantId) {
+        const v = this.findVariant(prod, variantId);
+        if (v && v.salePrice != null && v.salePrice < v.price) {
+          return v.salePrice;
+        }
+        return v?.price ?? 0;
+      }
+      return prod.discount > 0
+        ? Math.round(prod.price - (prod.price * prod.discount) / 100)
+        : prod.price;
+    };
+
     const totalItems = cartItems.reduce((sum, item) => sum + item.quantity, 0);
-    const totalAmount = cartItems.reduce(
-      (sum, item) => sum + item.price * item.quantity,
-      0,
-    );
+    const totalAmount = cartItems.reduce((sum, item) => {
+      const prod = item.product as unknown as ProductDocument;
+      const livePrice = getAuthoritativePrice(prod, item.variantId);
+      return sum + livePrice * item.quantity;
+    }, 0);
 
     const order = new this.orderModel({
       user: userObjectId,
@@ -253,7 +274,7 @@ export class OrderService {
         product: product._id,
         productName: product.name,
         productThumbnail: thumbnail,
-        price: item.price,
+        price: getAuthoritativePrice(product, item.variantId),
         quantity: item.quantity,
         // Variant snapshot — null for legacy items
         variantId: item.variantId ?? null,
@@ -268,10 +289,18 @@ export class OrderService {
 
     await this.orderItemModel.insertMany(orderItemsData);
 
-    // ─── Decrement stock (variant-aware) ──────────────────────────────────
+    // ─── Decrement stock (variant-aware) & revalidate cache ─────────────────
+    const affectedProducts = new Map<string, string>();
     for (const item of cartItems) {
       const product = item.product as unknown as ProductDocument;
       await this.decrementStock(product, item.variantId ?? null, item.quantity);
+      if (product?._id) {
+        affectedProducts.set(product._id.toString(), product.slug);
+      }
+    }
+    // Non-blocking cache revalidation for updated stock
+    for (const [id, slug] of affectedProducts.entries()) {
+      this.revalidationService.revalidateProduct({ action: 'update', id, slug });
     }
 
     // Clear the cart after successful checkout
@@ -316,7 +345,8 @@ export class OrderService {
     };
   }
 
-  // cancelOrder — only PENDING or PROCESSING orders can be cancelled
+  // cancelOrder — only PENDING or PROCESSING orders can be cancelled by the customer
+  // Once SHIPPED or DELIVERED, the customer can no longer cancel
   async cancelOrder(userId: string, orderId: string) {
     const order = await this.orderModel.findById(orderId);
 
@@ -328,9 +358,11 @@ export class OrderService {
       throw new ForbiddenException('You cannot cancel this order.');
     }
 
-    if (![OrderStatus.PENDING, OrderStatus.PROCESSING].includes(order.status)) {
+    if (!CUSTOMER_CANCELLABLE_STATUSES.includes(order.status)) {
       throw new BadRequestException(
-        `Order cannot be cancelled once it is ${order.status.toLowerCase()}.`,
+        order.status === OrderStatus.SHIPPED || order.status === OrderStatus.DELIVERED
+          ? 'Your order is already out for delivery and cannot be cancelled. Please contact support.'
+          : `Order cannot be cancelled once it is ${order.status.toLowerCase()}.`,
       );
     }
 
@@ -388,6 +420,15 @@ export class OrderService {
 
     if (dto.status === OrderStatus.DELIVERED) {
       order.deliveredAt = new Date();
+
+      // Auto-increment totalSold for each product in this order
+      const items = await this.orderItemModel.find({ order: order._id });
+      for (const item of items) {
+        await this.productModel.updateOne(
+          { _id: item.product },
+          { $inc: { totalSold: item.quantity } },
+        );
+      }
     }
 
     if (dto.status === OrderStatus.CANCELLED) {

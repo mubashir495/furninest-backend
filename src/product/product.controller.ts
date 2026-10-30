@@ -10,6 +10,8 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFiles,
+  ValidationPipe,
+  HttpCode,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 
@@ -18,12 +20,19 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { CreateVariantDto } from './dto/create-variant.dto';
 import { UpdateVariantDto } from './dto/update-variant.dto';
+import { ProductQueryDto } from './dto/product-query.dto';
+import { AdjustStockDto } from './dto/adjust-stock.dto';
+import { SetTotalSoldDto } from './dto/set-total-sold.dto';
+import { ReorderVariantImagesDto, VariantImageUrlDto } from './dto/variant-images.dto';
+import { ParseObjectIdPipe } from './pipes/parse-object-id.pipe';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 
 import { multerOptions } from '../common/multer/multer.config';
+
+const queryPipe = new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: false });
 
 @Controller('products')
 export class ProductController {
@@ -35,8 +44,8 @@ export class ProductController {
 
   /** Public catalogue — always returns only active products. */
   @Get()
-  findAll() {
-    return this.productService.findAll(false);
+  findAll(@Query(queryPipe) query: ProductQueryDto) {
+    return this.productService.findAll(false, query);
   }
 
   /**
@@ -46,8 +55,16 @@ export class ProductController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   @Get('admin')
-  findAllAdmin() {
-    return this.productService.findAll(true);
+  findAllAdmin(@Query(queryPipe) query: ProductQueryDto) {
+    return this.productService.findAll(true, query);
+  }
+
+  /** Admin single product — includes unpublished/archived and inactive variants. */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Get('admin/:id')
+  findOneAdmin(@Param('id', ParseObjectIdPipe) id: string) {
+    return this.productService.findOne(id, true);
   }
 
   @Get('catalog-tree')
@@ -56,13 +73,19 @@ export class ProductController {
   }
 
   @Get('category/:categoryId')
-  findByCategory(@Param('categoryId') categoryId: string) {
-    return this.productService.findByCategory(categoryId);
+  findByCategory(
+    @Param('categoryId', ParseObjectIdPipe) categoryId: string,
+    @Query(queryPipe) query: ProductQueryDto,
+  ) {
+    return this.productService.findByCategory(categoryId, query);
   }
 
   @Get('subcategory/:subCategoryId')
-  findBySubCategory(@Param('subCategoryId') subCategoryId: string) {
-    return this.productService.findBySubCategory(subCategoryId);
+  findBySubCategory(
+    @Param('subCategoryId', ParseObjectIdPipe) subCategoryId: string,
+    @Query(queryPipe) query: ProductQueryDto,
+  ) {
+    return this.productService.findBySubCategory(subCategoryId, query);
   }
 
   @Get('slug/:slug')
@@ -71,7 +94,7 @@ export class ProductController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
+  findOne(@Param('id', ParseObjectIdPipe) id: string) {
     return this.productService.findOne(id);
   }
 
@@ -115,7 +138,7 @@ export class ProductController {
     ),
   )
   update(
-    @Param('id') id: string,
+    @Param('id', ParseObjectIdPipe) id: string,
     @Body() dto: UpdateProductDto,
     @UploadedFiles()
     files: {
@@ -129,8 +152,37 @@ export class ProductController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   @Delete(':id')
-  remove(@Param('id') id: string) {
+  remove(@Param('id', ParseObjectIdPipe) id: string) {
     return this.productService.remove(id);
+  }
+
+  /** Safe alternative to DELETE: hides the product but keeps it for order history. */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Patch(':id/archive')
+  archive(@Param('id', ParseObjectIdPipe) id: string) {
+    return this.productService.archive(id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Patch(':id/restore')
+  restore(@Param('id', ParseObjectIdPipe) id: string) {
+    return this.productService.restore(id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Patch(':id/publish')
+  publish(@Param('id', ParseObjectIdPipe) id: string) {
+    return this.productService.setPublished(id, true);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Patch(':id/unpublish')
+  unpublish(@Param('id', ParseObjectIdPipe) id: string) {
+    return this.productService.setPublished(id, false);
   }
 
   // ─────────────────────────────────────────────────────────
@@ -145,7 +197,7 @@ export class ProductController {
     FileFieldsInterceptor([{ name: 'images', maxCount: 10 }], multerOptions),
   )
   addVariant(
-    @Param('id') productId: string,
+    @Param('id', ParseObjectIdPipe) productId: string,
     @Body() dto: CreateVariantDto,
     @UploadedFiles() files: { images?: Express.Multer.File[] },
   ) {
@@ -157,8 +209,8 @@ export class ProductController {
   @Roles('ADMIN')
   @Patch(':id/variants/:variantId')
   updateVariant(
-    @Param('id') productId: string,
-    @Param('variantId') variantId: string,
+    @Param('id', ParseObjectIdPipe) productId: string,
+    @Param('variantId', ParseObjectIdPipe) variantId: string,
     @Body() dto: UpdateVariantDto,
   ) {
     return this.productService.updateVariant(productId, variantId, dto);
@@ -172,8 +224,8 @@ export class ProductController {
     FileFieldsInterceptor([{ name: 'images', maxCount: 10 }], multerOptions),
   )
   addVariantImages(
-    @Param('id') productId: string,
-    @Param('variantId') variantId: string,
+    @Param('id', ParseObjectIdPipe) productId: string,
+    @Param('variantId', ParseObjectIdPipe) variantId: string,
     @UploadedFiles() files: { images?: Express.Multer.File[] },
   ) {
     return this.productService.addVariantImages(productId, variantId, files);
@@ -184,9 +236,73 @@ export class ProductController {
   @Roles('ADMIN')
   @Delete(':id/variants/:variantId')
   deleteVariant(
-    @Param('id') productId: string,
-    @Param('variantId') variantId: string,
+    @Param('id', ParseObjectIdPipe) productId: string,
+    @Param('variantId', ParseObjectIdPipe) variantId: string,
   ) {
     return this.productService.deleteVariant(productId, variantId);
+  }
+
+  /** Atomic stock change: body { stock } (absolute) OR { delta } (relative). */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Patch(':id/variants/:variantId/stock')
+  adjustStock(
+    @Param('id', ParseObjectIdPipe) productId: string,
+    @Param('variantId', ParseObjectIdPipe) variantId: string,
+    @Body() dto: AdjustStockDto,
+  ) {
+    return this.productService.adjustVariantStock(productId, variantId, dto);
+  }
+
+  /** Remove one image from a variant (body: { url }). */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Post(':id/variants/:variantId/images/remove')
+  @HttpCode(200)
+  removeVariantImage(
+    @Param('id', ParseObjectIdPipe) productId: string,
+    @Param('variantId', ParseObjectIdPipe) variantId: string,
+    @Body() dto: VariantImageUrlDto,
+  ) {
+    return this.productService.removeVariantImage(productId, variantId, dto.url);
+  }
+
+  /** Reorder variant images (body: { images: [...all current urls in new order] }). */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Patch(':id/variants/:variantId/images/order')
+  reorderVariantImages(
+    @Param('id', ParseObjectIdPipe) productId: string,
+    @Param('variantId', ParseObjectIdPipe) variantId: string,
+    @Body() dto: ReorderVariantImagesDto,
+  ) {
+    return this.productService.reorderVariantImages(productId, variantId, dto.images);
+  }
+
+  /** Make an image the primary (first) one (body: { url }). */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Patch(':id/variants/:variantId/images/primary')
+  setPrimaryImage(
+    @Param('id', ParseObjectIdPipe) productId: string,
+    @Param('variantId', ParseObjectIdPipe) variantId: string,
+    @Body() dto: VariantImageUrlDto,
+  ) {
+    return this.productService.setPrimaryVariantImage(productId, variantId, dto.url);
+  }
+
+  // ─────────────────────────────────────────────────────────
+  //  Admin: Sales Count Override
+  // ─────────────────────────────────────────────────────────
+
+  /** Admin can manually set how many units of a product have been sold. */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Patch(':id/total-sold')
+  setTotalSold(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: SetTotalSoldDto,
+  ) {
+    return this.productService.setTotalSold(id, dto.totalSold);
   }
 }

@@ -4,7 +4,8 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Schema } from 'mongoose';
+import * as mongoose from 'mongoose';
+import { Model } from 'mongoose';
 
 
 import { Cart, CartDocument } from './schema/cart.schema';
@@ -14,8 +15,6 @@ import { AddCartItemDto } from './dto/create-cart.dto';
 import { UpdateCartItemDto } from './dto/update-cart-item.dto';
 
 
-// Runtime helper � avoids TS namespace import issues with mongoose v9
-const isValidObjectIdHelper = (id: any): boolean => /^[0-9a-fA-F]{24}$/.test(String(id));
 
 @Injectable()
 export class CartService {
@@ -33,10 +32,11 @@ export class CartService {
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
   private toObjectId(id: string): any {
-    if (!isValidObjectIdHelper(id)) {
+    if (!mongoose.isValidObjectId(id)) {
       throw new BadRequestException('Invalid ID format');
     }
-    return new Schema.Types.ObjectId(id);
+    // Use (mongoose as any) to avoid the namespace typing issue with esModuleInterop
+    return new (mongoose as any).Types.ObjectId(id);
   }
 
   private async getOrCreateCart(userId: string): Promise<CartDocument> {
@@ -251,8 +251,8 @@ export class CartService {
     const cart = await this.getOrCreateCart(userId);
     const productObjectId = this.toObjectId(productId);
 
-    // Support variantId on the update DTO if present
-    const variantId = (dto as any).variantId ?? null;
+    // Use variantId from DTO (undefined → null for the query)
+    const variantId = dto.variantId ?? null;
 
     const cartItem = await this.cartItemModel.findOne({
       cart: cart._id,

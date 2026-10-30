@@ -8,7 +8,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { CategoryModule } from './category/category.module';
 
-import {  SubCategoryModule } from './subcategory/subcategory.module';
+import { SubCategoryModule } from './subcategory/subcategory.module';
 import { ProductModule } from './product/product.module';
 import { SupabaseModule } from './supabase/supabase.module';
 import { UploadService } from './upload/upload.service';
@@ -17,6 +17,10 @@ import { WishlistModule } from './wish_list/wish_list.module';
 import { CartModule } from './cart/cart.module';
 import { OrderModule } from './order/order.module';
 import { ShippingAddressModule } from './shipping-address/shipping-address.module';
+import { BlogModule } from './blog/blog.module';
+import { RevalidationModule } from './revalidation/revalidation.module';
+import { ReviewModule } from './review/review.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -67,6 +71,9 @@ import { ShippingAddressModule } from './shipping-address/shipping-address.modul
     CartModule,
     OrderModule,
     ShippingAddressModule,
+    BlogModule,
+    RevalidationModule,
+    ReviewModule,
   ],
   controllers: [AppController],
   providers: [

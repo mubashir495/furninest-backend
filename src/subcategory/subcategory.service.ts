@@ -11,6 +11,7 @@ import { Category, CategoryDocument } from '../category/schema/category.schema';
 import { CreateSubCategoryDto } from './dto/create-subcategory.dto';
 import { UpdateSubCategoryDto } from './dto/update-subcategory.dto';
 import { slugify } from '../common/utils/slugify';
+import { RevalidationService } from '../revalidation/revalidation.service';
 
 @Injectable()
 export class SubCategoryService {
@@ -19,6 +20,7 @@ export class SubCategoryService {
     private readonly subCategoryModel: Model<SubCategoryDocument>,
     @InjectModel(Category.name)
     private readonly categoryModel: Model<CategoryDocument>,
+    private readonly revalidationService: RevalidationService,
   ) {}
 
   private async generateUniqueSlug(name: string, excludeId?: string): Promise<string> {
@@ -40,7 +42,7 @@ export class SubCategoryService {
   }
 
   private toObjectId(id: string) {
-    return new mongoose.Schema.Types.ObjectId(id);
+    return new (mongoose as any).Types.ObjectId(id);
   }
 
   private async assertCategoryExists(categoryId: string) {
@@ -71,6 +73,11 @@ export class SubCategoryService {
       category: dto.category,
     });
 
+    this.revalidationService.revalidateSubCategory({
+      action: 'create',
+      id: subCategory._id.toString(),
+      slug: subCategory.slug,
+    });
     return {
       success: true,
       message: 'Subcategory created successfully.',
@@ -121,6 +128,8 @@ export class SubCategoryService {
 
   async update(id: string, dto: UpdateSubCategoryDto) {
     const subCategory = await this.subCategoryModel.findById(id);
+    if (!subCategory) throw new NotFoundException('Subcategory not found.');
+    const previousSlug = subCategory.slug;
     if (!subCategory) {
       throw new NotFoundException('Subcategory not found.');
     }
@@ -138,7 +147,7 @@ export class SubCategoryService {
       const existing = await this.subCategoryModel.findOne({
         name: dto.name.trim(),
         category: categoryObjectId,
-        _id: { $ne: new mongoose.Schema.Types.ObjectId(id) },
+        _id: { $ne: new (mongoose as any).Types.ObjectId(id) },
       });
       if (existing) {
         throw new ConflictException('This subcategory already exists under the selected category.');
@@ -158,8 +167,15 @@ export class SubCategoryService {
     if (!subCategory) {
       throw new NotFoundException('Subcategory not found.');
     }
+    const deletedSlug = subCategory.slug;
+    const deletedId = subCategory._id.toString();
 
     await subCategory.deleteOne();
+    this.revalidationService.revalidateSubCategory({
+      action: 'delete',
+      id: deletedId,
+      slug: deletedSlug,
+    });
 
     return { success: true, message: 'Subcategory deleted successfully.' };
   }

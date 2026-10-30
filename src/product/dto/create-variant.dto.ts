@@ -1,74 +1,59 @@
-import {
-  IsString,
-  IsOptional,
-  IsNumber,
-  IsBoolean,
-  Min,
-  IsNotEmpty,
-} from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsString, IsOptional, IsNumber, IsBoolean, IsInt, IsObject, Min, IsNotEmpty, Matches } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+
+const toBool = ({ value }: { value: any }) =>
+  value === undefined ? undefined : value === 'true' || value === true;
+
+// '' / 'null' (multipart) => null so a sale price can be cleared
+const toNullableNumber = ({ value }: { value: any }) =>
+  value === '' || value === 'null' || value === null ? null : Number(value);
+
+const parseObject = ({ value }: { value: any }) => {
+  if (typeof value === 'string') {
+    try { return JSON.parse(value); } catch { return value; }
+  }
+  return value;
+};
 
 export class CreateVariantDto {
-  /** Configuration name — e.g. '3-Seater', '5-Seater', 'Single Chair' */
-  @IsString()
-  @IsNotEmpty()
+  /** e.g. '3-Seater', '5-Seater', 'Single Chair' */
+  @IsString() @IsNotEmpty()
   configName: string;
 
-  /** Colour display name — e.g. 'Beige', 'Grey', 'Dark Blue' */
-  @IsOptional()
-  @IsString()
+  @IsOptional() @IsString()
   colorName?: string;
 
-  /** CSS hex colour for swatch rendering — e.g. '#D4A373' */
   @IsOptional()
-  @IsString()
+  @Matches(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, { message: 'colorHex must be a valid hex colour, e.g. #D4A373' })
   colorHex?: string;
 
-  /** Stock-keeping unit */
-  @IsOptional()
-  @IsString()
+  @IsOptional() @IsString()
   sku?: string;
 
-  /** Regular selling price in GBP (pence or decimal) */
-  @IsNumber()
-  @Min(0)
-  @Type(() => Number)
+  /** Same unit the project already uses for product prices. */
+  @IsNumber() @Min(0) @Type(() => Number)
   price: number;
 
-  /** Sale price — only set when genuinely on sale and lower than price */
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Type(() => Number)
-  salePrice?: number;
+  /** Must be lower than price. null clears the sale. */
+  @IsOptional() @Transform(toNullableNumber) @IsNumber() @Min(0)
+  salePrice?: number | null;
 
-  /** Available units */
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Type(() => Number)
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0)
   stock?: number;
 
-  /** Human-readable dimensions e.g. 'W: 220cm, D: 95cm, H: 85cm' */
-  @IsOptional()
-  @IsString()
+  @IsOptional() @IsString()
   dimensions?: string;
 
-  /** Material / fabric details specific to this variant */
-  @IsOptional()
-  @IsString()
+  @IsOptional() @IsString()
   material?: string;
 
-  /** Weight in kg */
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Type(() => Number)
-  weight?: number;
+  @IsOptional() @Transform(toNullableNumber) @IsNumber() @Min(0)
+  weight?: number | null;
 
-  /** Whether this variant is available for purchase */
-  @IsOptional()
-  @IsBoolean()
-  @Type(() => Boolean)
+  /** Free-form string attributes (finish, upholstery...). Values are coerced to strings. */
+  @IsOptional() @Transform(parseObject) @IsObject()
+  attributes?: Record<string, string>;
+
+  @IsOptional() @Transform(toBool) @IsBoolean()
   isActive?: boolean;
 }

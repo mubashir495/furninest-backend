@@ -11,6 +11,7 @@ import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { slugify } from '../common/utils/slugify';
 import { UploadService } from '../upload/upload.service';
+import { RevalidationService } from '../revalidation/revalidation.service';
 
 @Injectable()
 export class CategoryService {
@@ -19,6 +20,7 @@ export class CategoryService {
     private readonly categoryModel: Model<CategoryDocument>,
 
     private readonly uploadService: UploadService,
+    private readonly revalidationService: RevalidationService,
   ) {}
 
   private async generateUniqueSlug(
@@ -76,6 +78,11 @@ export class CategoryService {
       description: dto.description?.trim() || '',
     });
 
+    this.revalidationService.revalidateCategory({
+      action: 'create',
+      id: category._id.toString(),
+      slug: category.slug,
+    });
     return {
       success: true,
       message: 'Category created successfully.',
@@ -100,6 +107,8 @@ export class CategoryService {
     if (!category) {
       throw new NotFoundException('Category not found.');
     }
+    const deletedSlug = category.slug;
+    const deletedId = category._id.toString();
 
     return {
       success: true,
@@ -126,6 +135,8 @@ export class CategoryService {
     image?: Express.Multer.File,
   ) {
     const category = await this.categoryModel.findById(id);
+    if (!category) throw new NotFoundException('Category not found.');
+    const previousSlug = category.slug;
 
     if (!category) {
       throw new NotFoundException('Category not found.');
@@ -178,6 +189,12 @@ export class CategoryService {
     }
 
     await category.save();
+    this.revalidationService.revalidateCategory({
+      action: 'update',
+      id: category._id.toString(),
+      slug: category.slug,
+      previousSlug: previousSlug !== category.slug ? previousSlug : undefined,
+    });
 
     return {
       success: true,
@@ -206,7 +223,15 @@ export class CategoryService {
       }
     }
 
+    const deletedSlug = category.slug;
+    const deletedId = category._id.toString();
+
     await category.deleteOne();
+    this.revalidationService.revalidateCategory({
+      action: 'delete',
+      id: deletedId,
+      slug: deletedSlug,
+    });
 
     return {
       success: true,
