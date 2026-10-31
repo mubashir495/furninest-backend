@@ -14,7 +14,7 @@ export class Review {
     required: true,
     index: true,
   })
-  user: mongoose.Schema.Types.ObjectId;
+  user: mongoose.Types.ObjectId;
 
   @Prop({
     type: mongoose.Schema.Types.ObjectId,
@@ -22,7 +22,7 @@ export class Review {
     required: true,
     index: true,
   })
-  product: mongoose.Schema.Types.ObjectId;
+  product: mongoose.Types.ObjectId;
 
   @Prop({
     type: mongoose.Schema.Types.ObjectId,
@@ -30,7 +30,7 @@ export class Review {
     required: true,
     index: true,
   })
-  order: mongoose.Schema.Types.ObjectId;
+  order: mongoose.Types.ObjectId;
 
   /** 1–5 star rating */
   @Prop({ required: true, min: 1, max: 5 })

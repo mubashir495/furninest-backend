@@ -28,6 +28,11 @@ const CUSTOMER_CANCELLABLE_STATUSES: OrderStatus[] = [
   OrderStatus.PROCESSING,
 ];
 
+export interface OrderDetailsResponse {
+  success: boolean;
+  data: Record<string, any>;
+}
+
 @Injectable()
 export class OrderService {
   constructor(
@@ -175,7 +180,7 @@ export class OrderService {
     }
 
     const cartItems = await this.cartItemModel
-      .find({ cart: cart._id })
+      .find({ cart: cart._id as any })
       .populate<{ product: ProductDocument }>('product');
 
     if (!cartItems.length) {
@@ -304,7 +309,7 @@ export class OrderService {
     }
 
     // Clear the cart after successful checkout
-    await this.cartItemModel.deleteMany({ cart: cart._id });
+    await this.cartItemModel.deleteMany({ cart: cart._id as any });
 
     return {
       success: true,
@@ -324,7 +329,11 @@ export class OrderService {
   }
 
   // findOne — owner check uses toString() comparison
-  async findOne(userId: string, orderId: string, isAdmin = false) {
+  async findOne(
+    userId: string,
+    orderId: string,
+    isAdmin = false,
+  ): Promise<OrderDetailsResponse> {
     const order = await this.orderModel
       .findById(orderId)
       .populate('shippingAddress');
@@ -337,7 +346,7 @@ export class OrderService {
       throw new ForbiddenException('You cannot access this order.');
     }
 
-    const items = await this.orderItemModel.find({ order: order._id });
+    const items = await this.orderItemModel.find({ order: order._id as any });
 
     return {
       success: true,
@@ -371,7 +380,7 @@ export class OrderService {
     await order.save();
 
     // Restore stock (variant-aware)
-    const items = await this.orderItemModel.find({ order: order._id });
+    const items = await this.orderItemModel.find({ order: order._id as any });
     for (const item of items) {
       await this.restoreStock(
         item.product as any,
@@ -422,10 +431,10 @@ export class OrderService {
       order.deliveredAt = new Date();
 
       // Auto-increment totalSold for each product in this order
-      const items = await this.orderItemModel.find({ order: order._id });
+      const items = await this.orderItemModel.find({ order: order._id as any });
       for (const item of items) {
         await this.productModel.updateOne(
-          { _id: item.product },
+          { _id: item.product as any },
           { $inc: { totalSold: item.quantity } },
         );
       }
@@ -435,7 +444,7 @@ export class OrderService {
       order.cancelledAt = new Date();
 
       // Restore stock on admin-side cancellation (variant-aware)
-      const items = await this.orderItemModel.find({ order: order._id });
+      const items = await this.orderItemModel.find({ order: order._id as any });
       for (const item of items) {
         await this.restoreStock(
           item.product as any,

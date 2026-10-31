@@ -7,10 +7,10 @@ export type OrderItemDocument = OrderItem & Document;
 @Schema({ timestamps: { createdAt: 'created_date', updatedAt: 'updated_date' } })
 export class OrderItem {
   @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Order', required: true, index: true })
-  order: mongoose.Schema.Types.ObjectId;
+  order: mongoose.Types.ObjectId;
 
   @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true, index: true })
-  product: mongoose.Schema.Types.ObjectId;
+  product: mongoose.Types.ObjectId;
 
   /** Snapshot of the product name at time of purchase */
   @Prop({ required: true, trim: true })

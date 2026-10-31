@@ -7,10 +7,10 @@ export type CartItemDocument = CartItem & Document;
 @Schema({ timestamps: { createdAt: 'created_date', updatedAt: 'updated_date' } })
 export class CartItem {
   @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Cart', required: true, index: true })
-  cart: mongoose.Schema.Types.ObjectId;
+  cart: mongoose.Types.ObjectId;
 
   @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true, index: true })
-  product: mongoose.Schema.Types.ObjectId;
+  product: mongoose.Types.ObjectId;
 
   @Prop({ required: true, min: 1, default: 1 })
   quantity: number;

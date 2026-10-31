@@ -7,7 +7,7 @@ export type ShippingAddressDocument = ShippingAddress & Document;
 @Schema({ timestamps: { createdAt: 'created_date', updatedAt: 'updated_date' } })
 export class ShippingAddress {
   @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true })
-  user: mongoose.Schema.Types.ObjectId;
+  user: mongoose.Types.ObjectId;
 
   // Optional friendly name e.g. "Home", "Office"
   @Prop({ trim: true, default: 'Home' })

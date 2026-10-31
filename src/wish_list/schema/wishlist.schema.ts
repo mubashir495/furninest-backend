@@ -7,10 +7,10 @@ export type WishlistDocument = Wishlist & Document;
 @Schema({ timestamps: { createdAt: 'created_date', updatedAt: 'updated_date' } })
 export class Wishlist {
   @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true })
-  user: mongoose.Schema.Types.ObjectId;
+  user: mongoose.Types.ObjectId;
 
   @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true, index: true })
-  product: mongoose.Schema.Types.ObjectId;
+  product: mongoose.Types.ObjectId;
 }
 
 export const WishlistSchema = SchemaFactory.createForClass(Wishlist);

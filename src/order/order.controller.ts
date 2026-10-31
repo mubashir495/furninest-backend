@@ -9,7 +9,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
-import { OrderService } from './order.service';
+import { OrderService, OrderDetailsResponse } from './order.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { OrderStatus } from './schema/order.schema';
@@ -44,7 +44,7 @@ export class OrderController {
     @CurrentUser('id') userId: string,
     @CurrentUser('role') role: string,
     @Param('id') id: string,
-  ) {
+  ): Promise<OrderDetailsResponse> {
     const isAdmin = role === 'ADMIN';
     return this.orderService.findOne(userId, id, isAdmin);
   }

@@ -7,7 +7,7 @@ export type CartDocument = Cart & Document;
 @Schema({ timestamps: { createdAt: 'created_date', updatedAt: 'updated_date' } })
 export class Cart {
   @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true, index: true })
-  user: mongoose.Schema.Types.ObjectId;
+  user: mongoose.Types.ObjectId;
 }
 
 export const CartSchema = SchemaFactory.createForClass(Cart);

@@ -147,7 +147,7 @@ export class Product {
     required: true,
     index: true,
   })
-  subCategory: mongoose.Schema.Types.ObjectId;
+  subCategory: mongoose.Types.ObjectId;
 
   @Prop({
     type: mongoose.Schema.Types.ObjectId,
@@ -155,14 +155,14 @@ export class Product {
     required: true,
     index: true,
   })
-  category: mongoose.Schema.Types.ObjectId;
+  category: mongoose.Types.ObjectId;
 
   @Prop({
     type: [mongoose.Schema.Types.ObjectId],
     ref: 'Product',
     default: [],
   })
-  suggestionItems: mongoose.Schema.Types.ObjectId[];
+  suggestionItems: mongoose.Types.ObjectId[];
 
   @Prop({ default: true })
   isActive: boolean;

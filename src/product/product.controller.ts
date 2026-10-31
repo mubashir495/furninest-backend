@@ -15,7 +15,7 @@ import {
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 
-import { ProductService } from './product.service';
+import { ProductService, CatalogTreeResponse } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { CreateVariantDto } from './dto/create-variant.dto';
@@ -68,7 +68,7 @@ export class ProductController {
   }
 
   @Get('catalog-tree')
-  getCatalogTree() {
+  getCatalogTree(): Promise<CatalogTreeResponse> {
     return this.productService.getCatalogTree();
   }
 

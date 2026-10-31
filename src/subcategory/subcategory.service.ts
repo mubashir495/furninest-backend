@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -70,8 +71,12 @@ export class SubCategoryService {
     const subCategory = await this.subCategoryModel.create({
       name: dto.name.trim(),
       slug,
-      category: dto.category,
+      category: new mongoose.Types.ObjectId(dto.category) as any,
     });
+
+    if (!subCategory) {
+      throw new InternalServerErrorException('Failed to create subcategory.');
+    }
 
     this.revalidationService.revalidateSubCategory({
       action: 'create',

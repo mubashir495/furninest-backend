@@ -100,7 +100,7 @@ export class CartService {
     const cart = await this.getOrCreateCart(userId);
 
     const items = await this.cartItemModel
-      .find({ cart: cart._id })
+      .find({ cart: cart._id as any })
       .populate({
         path: 'product',
         select: 'name slug price discount thumbnailImage stock isActive variants',
@@ -149,7 +149,7 @@ export class CartService {
 
       // Check for existing cart item with the same product + variant
       const existingItem = await this.cartItemModel.findOne({
-        cart: cart._id,
+        cart: cart._id as any,
         product: productObjectId,
         variantId: dto.variantId,
       });
@@ -202,7 +202,7 @@ export class CartService {
 
     // موجودہ آئٹم چیک کریں (existing item check)
     const existingItem = await this.cartItemModel.findOne({
-      cart: cart._id,
+      cart: cart._id as any,
       product: productObjectId,
       variantId: null,
     });
@@ -255,7 +255,7 @@ export class CartService {
     const variantId = dto.variantId ?? null;
 
     const cartItem = await this.cartItemModel.findOne({
-      cart: cart._id,
+      cart: cart._id as any,
       product: productObjectId,
       variantId,
     });
@@ -328,7 +328,7 @@ export class CartService {
   async clearCart(userId: string) {
     const cart = await this.getOrCreateCart(userId);
 
-    await this.cartItemModel.deleteMany({ cart: cart._id });
+    await this.cartItemModel.deleteMany({ cart: cart._id as any });
 
     return {
       success: true,

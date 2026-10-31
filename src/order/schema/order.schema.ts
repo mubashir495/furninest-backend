@@ -20,13 +20,13 @@ export enum PaymentMethod {
 @Schema({ timestamps: { createdAt: 'created_date', updatedAt: 'updated_date' } })
 export class Order {
   @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true })
-  user: mongoose.Schema.Types.ObjectId;
+  user: mongoose.Types.ObjectId;
 
   @Prop({ required: true, unique: true, index: true })
   orderNumber: string;
 
   @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'ShippingAddress', required: true, index: true })
-  shippingAddress: mongoose.Schema.Types.ObjectId;
+  shippingAddress: mongoose.Types.ObjectId;
 
   @Prop({ type: String, enum: PaymentMethod, default: PaymentMethod.COD })
   paymentMethod: PaymentMethod;

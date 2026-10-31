@@ -33,6 +33,11 @@ export interface ProductFiles {
   images?: Express.Multer.File[];
 }
 
+export interface CatalogTreeResponse {
+  success: boolean;
+  data: Array<Record<string, any>>;
+}
+
 const ObjectIdCtor = (mongoose as any).Types.ObjectId;
 const oid = (id: string) => new ObjectIdCtor(id);
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -162,7 +167,7 @@ export class ProductService {
   }
 
   private async getSuggestions(product: ProductDocument) {
-    const base = product.suggestionItems?.length
+    const base: any = product.suggestionItems?.length
       ? { _id: { $in: product.suggestionItems }, ...PUBLIC_FILTER }
       : { subCategory: product.subCategory, _id: { $ne: product._id }, ...PUBLIC_FILTER };
     const items = await this.productModel
@@ -702,7 +707,7 @@ export class ProductService {
 
   // ─── Catalog Tree ──────────────────────────────────────────────────────────
 
-  async getCatalogTree() {
+  async getCatalogTree(): Promise<CatalogTreeResponse> {
     const categories = await this.categoryModel.find().sort({ name: 1 }).lean();
     const subCategories = await this.subCategoryModel.find().sort({ name: 1 }).lean();
     const tree = categories.map((category) => ({

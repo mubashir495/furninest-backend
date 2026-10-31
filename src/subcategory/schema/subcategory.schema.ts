@@ -13,7 +13,7 @@ export class SubCategory {
   slug: string;
 
   @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true, index: true })
-  category: mongoose.Schema.Types.ObjectId;
+  category: mongoose.Types.ObjectId;
 }
 
 export const SubCategorySchema = SchemaFactory.createForClass(SubCategory);
