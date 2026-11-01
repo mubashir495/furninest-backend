@@ -24,7 +24,7 @@ async function seed() {
 
   const email = (process.env.ADMIN_EMAIL ?? 'admin@luxafurniture.co.uk').toLowerCase();
   const password = process.env.ADMIN_PASSWORD ?? 'Admin@12345';
-  const fullName = process.env.ADMIN_NAME ?? 'LUXA Admin';
+  const fullName = process.env.ADMIN_NAME ?? 'LUXA FURNITURE Admin';
 
   const existing = await users.findOne({ email });
   if (existing) {
