@@ -29,6 +29,8 @@ export function getAllowedOrigins(): string[] {
 
   const defaults = [
     // Production & Staging domains
+    'https://luxafurniture.com',
+    'https://www.luxafurniture.com',
     'https://luxafurniture.co.uk',
     'https://www.luxafurniture.co.uk',
     'https://luxafurniture.vercel.app',
