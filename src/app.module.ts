@@ -20,6 +20,8 @@ import { ShippingAddressModule } from './shipping-address/shipping-address.modul
 import { BlogModule } from './blog/blog.module';
 import { RevalidationModule } from './revalidation/revalidation.module';
 import { ReviewModule } from './review/review.module';
+import { BullModule } from '@nestjs/bullmq';
+import { ListingAgentModule } from './listing-agent/listing-agent.module';
 
 @Module({
   imports: [
@@ -52,6 +54,40 @@ import { ReviewModule } from './review/review.module';
         };
       },
     }),
+    BullModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        const redisUrl = config.get<string>('REDIS_URL') || 'redis://localhost:6379';
+        try {
+          const url = new URL(redisUrl);
+          return {
+            connection: {
+              host: url.hostname || 'localhost',
+              port: Number(url.port) || 6379,
+              password: url.password || undefined,
+              username:
+                url.username && url.username !== 'default'
+                  ? url.username
+                  : undefined,
+              tls: url.protocol === 'rediss:' ? {} : undefined,
+              maxRetriesPerRequest: null,
+              enableReadyCheck: false,
+              lazyConnect: true,
+            },
+          };
+        } catch {
+          return {
+            connection: {
+              host: 'localhost',
+              port: 6379,
+              maxRetriesPerRequest: null,
+              enableReadyCheck: false,
+              lazyConnect: true,
+            },
+          };
+        }
+      },
+    }),
     // Global rate limit default: 20 requests/min per IP.
     // Stricter per-route limits (signup/login/resend-verification) are
     // already set via @Throttle() in auth.controller.ts and override this.
@@ -74,6 +110,7 @@ import { ReviewModule } from './review/review.module';
     BlogModule,
     RevalidationModule,
     ReviewModule,
+    ListingAgentModule,
   ],
   controllers: [AppController],
   providers: [
