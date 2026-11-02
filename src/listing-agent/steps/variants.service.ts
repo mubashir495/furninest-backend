@@ -1,6 +1,6 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { GoogleGenAI } from '@google/genai';
+import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { randomBytes } from 'crypto';
 
@@ -12,13 +12,20 @@ import {
   ALLOWED_CONFIGS_BY_CATEGORY,
   ALLOWED_MATERIALS,
 } from '../config/allowed-variants.config';
+import {
+  VARIANTS_SYSTEM_PROMPT,
+  buildVariantsUserPrompt,
+} from '../config/prompts.config';
 
-export const VariantSelectionSchema = z.array(
-  z.object({
-    configName: z.string().min(1),
-    colorName: z.string().min(1),
-  }),
-).min(1).max(6);
+export const VariantSelectionSchema = z
+  .array(
+    z.object({
+      configName: z.string().min(1),
+      colorName: z.string().min(1),
+    }),
+  )
+  .min(1)
+  .max(6);
 
 export type VariantSelection = z.infer<typeof VariantSelectionSchema>;
 
@@ -66,16 +73,19 @@ export class VariantsService {
     this.pricingService = pricingService || new PricingService(configService);
   }
 
-  private getClient(): GoogleGenAI {
-    const apiKey = this.configService.get<string>('GEMINI_API_KEY');
+  private getClient(): Anthropic {
+    const apiKey = this.configService.get<string>('ANTHROPIC_API_KEY');
     if (!apiKey) {
-      throw new Error('GEMINI_API_KEY is not defined in environment variables.');
+      throw new Error('ANTHROPIC_API_KEY is not defined in environment variables.');
     }
-    return new GoogleGenAI({ apiKey });
+    return new Anthropic({ apiKey });
   }
 
   private getModelName(): string {
-    return this.configService.get<string>('GEMINI_MODEL') || 'gemini-2.5-flash';
+    return (
+      this.configService.get<string>('ANTHROPIC_MODEL') ||
+      'claude-sonnet-5-5'
+    );
   }
 
   /**
@@ -98,132 +108,93 @@ export class VariantsService {
 
     const allowedColorNames = ALLOWED_COLORS.map((c) => c.name);
 
-    const prompt = `
-You are a luxury furniture inventory specialist.
-A new furniture listing has been analyzed with the following attributes:
-- Category: ${analysis.category}
-- Detected Color: ${analysis.color}
-- Detected Material: ${analysis.material}
-- Seating: ${analysis.seating ?? 'N/A'}
-- Style: ${analysis.style}
-
-YOU MUST CHOOSE ONLY FROM THE STRICT ALLOWED LISTS BELOW:
-
-ALLOWED COLORS:
-${JSON.stringify(allowedColorNames)}
-
-ALLOWED CONFIGURATIONS:
-${JSON.stringify(allowedConfigs)}
-
-RULES:
-1. Select 1 to 4 logical variants for this product catalog entry.
-2. "colorName" MUST be an exact match from the ALLOWED COLORS list above. NEVER invent a color.
-3. "configName" MUST be an exact match from the ALLOWED CONFIGURATIONS list above. NEVER invent a configuration.
-4. The first variant MUST represent the detected item: use the configuration matching the detected seating (${analysis.seating ?? 'N/A'}) and closest allowed color to "${analysis.color}".
-5. Remaining variants should offer popular alternative sizes/configurations and colors from the allowed lists.
-
-Respond strictly in JSON with an array of objects:
-[
-  {
-    "configName": "Exact config name from allowed list",
-    "colorName": "Exact color name from allowed list"
-  }
-]
-`;
+    const prompt = buildVariantsUserPrompt(
+      analysis.category,
+      analysis.color,
+      analysis.material,
+      analysis.seating,
+      analysis.style,
+      allowedColorNames,
+      allowedConfigs,
+    );
 
     let selections: VariantSelection;
 
     try {
-      this.logger.log(`Calling Gemini Variants generator using model ${model}...`);
-      const response = await this.callGemini(client, model, prompt);
-      selections = this.parseAndValidate(response);
+      this.logger.log(`Calling Claude (${model}) for variants selection...`);
+      const raw = await this.callClaude(client, model, prompt);
+      selections = this.parseAndValidate(raw);
     } catch (firstErr: any) {
       this.logger.warn(
-        `Variants generation attempt 1 failed (${firstErr?.message}). Retrying once...`,
+        `Claude Variants attempt 1 failed (${firstErr?.message}). Retrying once with strict instructions...`,
       );
 
       try {
-        const retryPrompt = `${prompt}\n\nATTENTION: Return ONLY a valid JSON array of objects using exact strings from the allowed lists.`;
-        const retryResponse = await this.callGemini(client, model, retryPrompt);
-        selections = this.parseAndValidate(retryResponse);
+        const retryPrompt = `${prompt}\n\nATTENTION: Return strictly valid JSON array. No markdown code blocks.`;
+        const retryRaw = await this.callClaude(client, model, retryPrompt);
+        selections = this.parseAndValidate(retryRaw);
       } catch (retryErr: any) {
         this.logger.warn(
-          `Variants generation retry failed (${retryErr?.message}). Falling back to safe default variant.`,
+          `Claude Variants attempt 2 failed (${retryErr?.message}). Falling back to deterministic selections.`,
         );
-        // Fallback safely to a default variant if LLM fails
-        selections = [
-          {
-            configName: allowedConfigs[0] || 'Standard',
-            colorName: this.matchClosestColor(analysis.color).name,
-          },
-        ];
+        selections = this.buildFallbackSelections(
+          analysis,
+          allowedConfigs,
+          allowedColorNames,
+        );
       }
     }
 
-    // Check if any selection matches the detected seating count
-    const hasMatchingSeating =
-      analysis.seating != null &&
-      selections.some((item) => isConfigMatchingSeating(item.configName, analysis.seating));
+    // Sanitize selections against allowed lists
+    const sanitized = selections.map((s) => ({
+      configName: this.sanitizeConfig(s.configName, allowedConfigs),
+      colorName: this.sanitizeColor(s.colorName, allowedColorNames),
+    }));
 
-    // Build complete DraftVariant documents
-    const variants: DraftVariant[] = selections.map((item, index) => {
-      const matchedColor = this.matchClosestColor(item.colorName);
-      const configName = allowedConfigs.includes(item.configName)
-        ? item.configName
-        : allowedConfigs[0] || 'Standard';
-
-      const sku = this.generateSku(analysis.category, configName, matchedColor.name, index);
-
-      // Only the config detected in the photo (analysis.seating) gets the source photos
-      // Other configs get images: [] and a flag needsPhoto: true
-      const isDetectedPhotoConfig = hasMatchingSeating
-        ? isConfigMatchingSeating(configName, analysis.seating)
-        : index === 0;
-
-      // Variants pricing applies per-config price multiplier, rounded to 999
+    // Build full DraftVariant objects
+    return sanitized.map((s, idx) => {
+      const color =
+        ALLOWED_COLORS.find((c) => c.name === s.colorName) || ALLOWED_COLORS[0];
       const variantPricing = this.pricingService.calculateVariantPricing(
         pricing.calculatedPrice,
         pricing.compareAtPrice,
-        configName,
+        s.configName,
       );
 
       return {
-        configName,
-        colorName: matchedColor.name,
-        colorHex: matchedColor.hex,
-        sku,
+        configName: s.configName,
+        colorName: color.name,
+        colorHex: color.hex,
+        sku: this.generateSku(analysis.category, s.configName, color.name, idx),
         price: variantPricing.price,
         compareAtPrice: variantPricing.compareAtPrice,
-        stock: 0, // default 0 per specification
-        isActive: false, // false until admin sets stock per specification
-        needsPhoto: !isDetectedPhotoConfig,
-        suggested: true, // mark as AI-suggested
-        dimensions: '', // never guess dimensions
+        stock: 0,
+        dimensions: '',
         material: this.sanitizeMaterial(analysis.material),
-        images: isDetectedPhotoConfig ? sourceImages : [],
-      };
+        images: idx === 0 ? sourceImages : [],
+        needsPhoto: idx !== 0,
+        suggested: true,
+        isActive: false,
+      } as unknown as DraftVariant;
     });
-
-    this.logger.log(`Generated ${variants.length} draft variants.`);
-    return variants;
   }
 
-  private async callGemini(
-    client: GoogleGenAI,
+  private async callClaude(
+    client: Anthropic,
     model: string,
     prompt: string,
   ): Promise<string> {
-    const response = await client.models.generateContent({
+    const message = await client.messages.create({
       model,
-      contents: [{ text: prompt }],
-      config: {
-        responseMimeType: 'application/json',
-      },
+      max_tokens: 512,
+      system: VARIANTS_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: prompt }],
     });
 
-    const text = response.text || '';
+    const textBlock = message.content.find((b) => b.type === 'text');
+    const text = textBlock && textBlock.type === 'text' ? textBlock.text : '';
     if (!text.trim()) {
-      throw new Error('Gemini returned empty text for variants.');
+      throw new Error('Claude returned empty text for Variants generation.');
     }
     return text;
   }
@@ -235,32 +206,68 @@ Respond strictly in JSON with an array of objects:
     } else if (cleaned.startsWith('```')) {
       cleaned = cleaned.replace(/^```/, '').replace(/```$/, '').trim();
     }
-
     const parsed = JSON.parse(cleaned);
-    const data = Array.isArray(parsed) ? parsed : (parsed.variants || [parsed]);
-    return VariantSelectionSchema.parse(data);
+    return VariantSelectionSchema.parse(parsed);
   }
 
-  private matchClosestColor(colorInput: string): { name: string; hex: string } {
-    const clean = (colorInput || '').toLowerCase().trim();
-    const exact = ALLOWED_COLORS.find(
-      (c) => c.name.toLowerCase() === clean,
-    );
+  private buildFallbackSelections(
+    analysis: VisionAnalysis,
+    allowedConfigs: string[],
+    allowedColorNames: string[],
+  ): VariantSelection {
+    const matchingConfig =
+      allowedConfigs.find((c) => isConfigMatchingSeating(c, analysis.seating)) ||
+      allowedConfigs[0];
+    const matchingColor =
+      this.findClosestColorName(analysis.color, allowedColorNames) ||
+      allowedColorNames[0];
+    return [{ configName: matchingConfig, colorName: matchingColor }];
+  }
+
+  private sanitizeConfig(input: string, allowedConfigs: string[]): string {
+    const clean = (input || '').trim();
+    const exact = allowedConfigs.find((c) => c === clean);
     if (exact) return exact;
-
-    const partial = ALLOWED_COLORS.find(
-      (c) => clean.includes(c.name.toLowerCase()) || c.name.toLowerCase().includes(clean),
+    const partial = allowedConfigs.find(
+      (c) =>
+        clean.toLowerCase().includes(c.toLowerCase()) ||
+        c.toLowerCase().includes(clean.toLowerCase()),
     );
-    if (partial) return partial;
+    return partial || allowedConfigs[0];
+  }
 
-    // Default to first allowed color
-    return ALLOWED_COLORS[0];
+  private sanitizeColor(input: string, allowedColorNames: string[]): string {
+    const colorObj = this.findColorObject(input);
+    return colorObj?.name || allowedColorNames[0];
+  }
+
+  private findClosestColorName(
+    colorInput: string,
+    allowedColorNames: string[],
+  ): string | undefined {
+    const colorObj = this.findColorObject(colorInput);
+    return colorObj?.name;
+  }
+
+  private findColorObject(
+    colorInput: string,
+  ): (typeof ALLOWED_COLORS)[number] | undefined {
+    const clean = (colorInput || '').toLowerCase().trim();
+    const exact = ALLOWED_COLORS.find((c) => c.name.toLowerCase() === clean);
+    if (exact) return exact;
+    const partial = ALLOWED_COLORS.find(
+      (c) =>
+        clean.includes(c.name.toLowerCase()) ||
+        c.name.toLowerCase().includes(clean),
+    );
+    return partial || ALLOWED_COLORS[0];
   }
 
   private sanitizeMaterial(materialInput: string): string {
     const clean = (materialInput || '').toLowerCase().trim();
-    const matched = ALLOWED_MATERIALS.find((m) =>
-      clean.includes(m.toLowerCase()) || m.toLowerCase().includes(clean),
+    const matched = ALLOWED_MATERIALS.find(
+      (m) =>
+        clean.includes(m.toLowerCase()) || m.toLowerCase().includes(clean),
     );
     return matched || 'Luxury Velvet';
   }

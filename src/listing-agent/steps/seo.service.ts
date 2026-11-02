@@ -2,12 +2,16 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { GoogleGenAI } from '@google/genai';
+import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { randomBytes } from 'crypto';
 
 import { VisionAnalysis } from './vision.service';
 import { Product, ProductDocument } from '../../product/schema/product.schema';
+import {
+  SEO_SYSTEM_PROMPT,
+  buildSeoUserPrompt,
+} from '../config/prompts.config';
 
 export const RawSeoSchema = z.object({
   title: z.string().min(1),
@@ -38,6 +42,14 @@ export const BANNED_UNSUPPORTED_WORDS = [
   'lifelong',
   'certified',
   'eco-friendly',
+  'fire compliant',
+  'fire safety compliant',
+  'crib 5',
+  'bs 5852',
+  'free delivery',
+  'free uk delivery',
+  'best in uk',
+  'best in the uk',
 ];
 
 export function getAnalysisCorpus(analysis: VisionAnalysis): string {
@@ -47,6 +59,7 @@ export function getAnalysisCorpus(analysis: VisionAnalysis): string {
     analysis.color || '',
     analysis.style || '',
     ...(analysis.features || []),
+    ...(analysis.specifications?.map((s) => `${s.label} ${s.value}`) || []),
   ];
   return parts.join(' ').toLowerCase();
 }
@@ -141,24 +154,29 @@ export class SeoService {
     private readonly productModel: Model<ProductDocument>,
   ) {}
 
-  private getClient(): GoogleGenAI {
-    const apiKey = this.configService.get<string>('GEMINI_API_KEY');
+  private getClient(): Anthropic {
+    const apiKey = this.configService.get<string>('ANTHROPIC_API_KEY');
     if (!apiKey) {
-      throw new Error('GEMINI_API_KEY is not defined in environment variables.');
+      throw new Error('ANTHROPIC_API_KEY is not defined in environment variables.');
     }
-    return new GoogleGenAI({ apiKey });
+    return new Anthropic({ apiKey });
   }
 
   private getModelName(): string {
-    return this.configService.get<string>('GEMINI_MODEL') || 'gemini-2.5-flash';
+    return (
+      this.configService.get<string>('ANTHROPIC_MODEL') ||
+      'claude-sonnet-5-5'
+    );
   }
 
   /**
-   * Generates SEO metadata (title <= 60 chars, slug, metaDescription <= 155 chars, description, tags).
-   * Strictly uses only facts present in the vision analysis.
-   * Disallows unsupported marketing buzzwords unless present in analysis.
+   * Generates British English SEO metadata (title <= 60 chars, slug, metaDescription <= 155 chars, description, tags).
+   * Complies with UK retail advertising guidelines and filters out unverified claims.
    */
-  async generate(analysis: VisionAnalysis): Promise<SeoResult> {
+  async generate(
+    analysis: VisionAnalysis,
+    rawDetails?: string,
+  ): Promise<SeoResult> {
     const client = this.getClient();
     const model = this.getModelName();
 
@@ -170,91 +188,49 @@ export class SeoService {
         style: analysis.style,
         seating: analysis.seating,
         features: analysis.features,
+        specifications: analysis.specifications,
       },
       null,
       2,
     );
 
-    const basePrompt = `
-You are an expert e-commerce SEO copywriter for "Luxa Furniture".
-Write search-engine-optimized product listing content based ONLY on the following verified product analysis:
-
-${analysisJson}
-
-CRITICAL RULES:
-1. Use ONLY words and facts supported by analysis.features, analysis.material, analysis.color, and analysis.style.
-2. STRICTLY FORBIDDEN: Do NOT use unsupported marketing buzzwords such as "handcrafted", "premium quality", "durable", "comfortable", "warranty", "guaranteed", "genuine", "imported", "solid wood" unless explicitly present in the analysis above.
-3. DO NOT invent features, materials, dimensions, certifications, or warranty claims that are not in the analysis.
-4. "title": Catchy luxury product title, MAXIMUM 60 characters.
-5. "slug": Clean URL-friendly kebab-case slug based on the title (lowercase letters, numbers, hyphens only).
-6. "metaDescription": Compelling meta description for Google search, MAXIMUM 155 characters.
-7. "description": Rich, engaging 2-3 paragraph product description highlighting only the confirmed material, style, and visible features.
-8. "tags": 4 to 8 relevant search keywords/tags.
-
-Respond strictly in valid JSON matching this schema:
-{
-  "title": "string (<= 60 chars)",
-  "slug": "string (kebab-case)",
-  "metaDescription": "string (<= 155 chars)",
-  "description": "string",
-  "tags": ["tag1", "tag2"]
-}
-`;
+    const basePrompt = buildSeoUserPrompt(analysisJson, rawDetails);
 
     let rawOutput: RawSeoData;
 
+    // Attempt 1
     try {
-      this.logger.log(`Calling Gemini SEO generator using model ${model}...`);
-      const responseText = await this.callGemini(client, model, basePrompt);
-      rawOutput = this.parseAndValidate(responseText);
+      this.logger.log(`Calling Claude (${model}) for British English SEO generation...`);
+      const response = await this.callClaude(client, model, basePrompt);
+      rawOutput = this.parseAndValidate(response);
     } catch (firstErr: any) {
       this.logger.warn(
-        `SEO generation attempt 1 failed (${firstErr?.message}). Retrying once with strict length rules...`,
+        `Claude SEO attempt 1 failed (${firstErr?.message}). Retrying once...`,
       );
 
+      // Attempt 2 (Retry)
       try {
-        const retryPrompt = `${basePrompt}\n\nATTENTION: Ensure strictly valid JSON. Remember: "title" must be <= 60 characters, and "metaDescription" must be <= 155 characters.`;
-        const retryResponse = await this.callGemini(client, model, retryPrompt);
+        const retryPrompt = `${basePrompt}\n\nATTENTION: Return strictly valid JSON adhering to the exact schema. Output must be British English. No markdown.`;
+        const retryResponse = await this.callClaude(client, model, retryPrompt);
         rawOutput = this.parseAndValidate(retryResponse);
       } catch (retryErr: any) {
-        this.logger.error(`SEO generation retry failed: ${retryErr?.message}`);
-        throw new Error(`SEO generation failed: ${retryErr?.message || retryErr}`);
+        this.logger.error(`Claude SEO attempt 2 failed: ${retryErr?.message}`);
+        throw new Error(`Claude SEO generation failed: ${retryErr?.message || retryErr}`);
       }
     }
 
-    // Post-check: check for banned words not present in analysis
+    // Post-check: check for ungrounded claims or forbidden marketing buzzwords
     const analysisCorpus = getAnalysisCorpus(analysis);
-    let unsupportedWords = findUnsupportedWordsInSeo(rawOutput, analysisCorpus);
+    const unsupportedWords = findUnsupportedWordsInSeo(rawOutput, analysisCorpus);
 
     if (unsupportedWords.length > 0) {
       this.logger.warn(
-        `SEO output contains unsupported marketing words: [${unsupportedWords.join(', ')}]. Regenerating once...`,
+        `SEO output contains unsupported marketing claims: [${unsupportedWords.join(', ')}]. Stripping them...`,
       );
-
-      try {
-        const warningPrompt = `${basePrompt}\n\nATTENTION: Your previous output contained forbidden marketing claims not present in the visual analysis: ${unsupportedWords.join(', ')}.\nRegenerate strictly without using any of these words or any unsupported claims.`;
-        const regenResponse = await this.callGemini(client, model, warningPrompt);
-        const regenOutput = this.parseAndValidate(regenResponse);
-
-        // Check if regenerated output still has banned words
-        const remainingUnsupported = findUnsupportedWordsInSeo(regenOutput, analysisCorpus);
-        if (remainingUnsupported.length > 0) {
-          this.logger.warn(
-            `Regenerated SEO output still had unsupported words: [${remainingUnsupported.join(', ')}]. Stripping them...`,
-          );
-          rawOutput = stripUnsupportedWordsFromSeo(regenOutput, remainingUnsupported);
-        } else {
-          rawOutput = regenOutput;
-        }
-      } catch (regenErr: any) {
-        this.logger.warn(
-          `Regeneration after banned words failed (${regenErr?.message}). Stripping detected banned words directly...`,
-        );
-        rawOutput = stripUnsupportedWordsFromSeo(rawOutput, unsupportedWords);
-      }
+      rawOutput = stripUnsupportedWordsFromSeo(rawOutput, unsupportedWords);
     }
 
-    // Enforce safe truncation if length limits were exceeded even after retry
+    // Enforce safe truncation for title and meta description
     let safeTitle = this.safeTruncate(rawOutput.title, 60);
     if (!safeTitle) {
       safeTitle = `${analysis.color || ''} ${analysis.category || 'Luxury Furniture'}`.trim();
@@ -262,14 +238,14 @@ Respond strictly in valid JSON matching this schema:
 
     let safeMetaDescription = this.safeTruncate(rawOutput.metaDescription, 155);
     if (!safeMetaDescription) {
-      safeMetaDescription = `Explore ${safeTitle} at Luxa Furniture. Featuring ${analysis.material || 'luxury finishes'}.`;
+      safeMetaDescription = `Discover the ${safeTitle} at Luxa Furniture UK. Beautiful ${analysis.material || 'luxury finishes'}.`;
     }
 
     // Normalize slug and ensure uniqueness in Product database
     const rawSlug = this.slugify(rawOutput.slug || safeTitle);
     const uniqueSlug = await this.ensureUniqueSlug(rawSlug);
 
-    this.logger.log(`Generated SEO content: title="${safeTitle}", slug="${uniqueSlug}"`);
+    this.logger.log(`Generated UK SEO content: title="${safeTitle}", slug="${uniqueSlug}"`);
 
     return {
       title: safeTitle,
@@ -280,22 +256,22 @@ Respond strictly in valid JSON matching this schema:
     };
   }
 
-  private async callGemini(
-    client: GoogleGenAI,
+  private async callClaude(
+    client: Anthropic,
     model: string,
     prompt: string,
   ): Promise<string> {
-    const response = await client.models.generateContent({
+    const message = await client.messages.create({
       model,
-      contents: [{ text: prompt }],
-      config: {
-        responseMimeType: 'application/json',
-      },
+      max_tokens: 2048,
+      system: SEO_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: prompt }],
     });
 
-    const text = response.text || '';
+    const textBlock = message.content.find((b) => b.type === 'text');
+    const text = textBlock && textBlock.type === 'text' ? textBlock.text : '';
     if (!text.trim()) {
-      throw new Error('Gemini returned empty text for SEO generation.');
+      throw new Error('Claude returned empty text for SEO generation.');
     }
     return text;
   }
@@ -315,7 +291,6 @@ Respond strictly in valid JSON matching this schema:
   private safeTruncate(str: string, maxLength: number): string {
     const trimmed = (str || '').trim();
     if (trimmed.length <= maxLength) return trimmed;
-    // Truncate at word boundary if possible
     const truncated = trimmed.slice(0, maxLength);
     const lastSpace = truncated.lastIndexOf(' ');
     if (lastSpace > maxLength * 0.7) {
@@ -325,19 +300,17 @@ Respond strictly in valid JSON matching this schema:
   }
 
   private slugify(input: string): string {
-    return input
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '') || 'luxury-furniture';
+    return (
+      input
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '') || 'luxury-furniture'
+    );
   }
 
-  /**
-   * Ensures the slug does not collide with an existing published product.
-   * If collision occurs, appends a short hex suffix.
-   */
   private async ensureUniqueSlug(baseSlug: string): Promise<string> {
     const exists = await this.productModel.exists({ slug: baseSlug });
     if (!exists) {

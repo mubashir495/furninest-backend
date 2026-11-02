@@ -13,6 +13,15 @@ export enum ListingDraftStatus {
 }
 
 @Schema({ _id: false })
+export class SpecificationItem {
+  @Prop({ trim: true, default: '' })
+  label: string;
+
+  @Prop({ trim: true, default: '' })
+  value: string;
+}
+
+@Schema({ _id: false })
 export class AnalysisData {
   @Prop({ trim: true, default: '' })
   category: string;
@@ -31,6 +40,13 @@ export class AnalysisData {
 
   @Prop({ type: [String], default: [] })
   features: string[];
+
+  @Prop({
+    type: [{ label: { type: String, trim: true }, value: { type: String, trim: true } }],
+    _id: false,
+    default: [],
+  })
+  specifications: SpecificationItem[];
 
   @Prop({ type: Number, default: 0, min: 0, max: 1 })
   confidence: number;
@@ -58,18 +74,36 @@ export class SeoData {
 }
 
 @Schema({ _id: false })
+export class SuggestedPriceRange {
+  @Prop({ type: Number, default: 0 })
+  min: number;
+
+  @Prop({ type: Number, default: 0 })
+  max: number;
+}
+
+@Schema({ _id: false })
 export class PricingData {
-  @Prop({ required: true, min: 0 })
+  @Prop({ required: true, min: 0, default: 0 })
   costPrice: number;
 
   @Prop({ default: 0.4 })
   marginRate: number;
+
+  @Prop({ default: 0.20 })
+  vatRate: number;
+
+  @Prop({ default: 'GBP' })
+  currency: string;
 
   @Prop({ default: 0 })
   calculatedPrice: number;
 
   @Prop({ type: Number, default: null })
   compareAtPrice: number | null;
+
+  @Prop({ type: SuggestedPriceRange, default: null })
+  suggestedPriceRange?: SuggestedPriceRange | null;
 }
 
 @Schema({ _id: true })
@@ -136,10 +170,10 @@ export class GeneratedImage {
   },
 })
 export class ListingDraft {
-  @Prop({ type: [String], required: true, default: [] })
+  @Prop({ type: [String], default: [] })
   sourceImages: string[];
 
-  @Prop({ required: true, min: 0 })
+  @Prop({ min: 0, default: 0 })
   costPrice: number;
 
   @Prop({
@@ -192,6 +226,20 @@ export class ListingDraft {
     default: null,
   })
   subCategoryId: Types.ObjectId | null;
+
+  @Prop({ type: String, default: 'en' })
+  language: string;
+
+  @Prop({ type: String, default: null })
+  rawDetails: string | null;
+
+  /** UK compliance: whether the seller/admin has confirmed the physical fire safety label on upholstered items */
+  @Prop({ default: false })
+  fireSafetyLabelConfirmed: boolean;
+
+  /** Stock location: held in the UK (default: "UK warehouse") */
+  @Prop({ default: 'UK warehouse', trim: true })
+  stockLocation: string;
 }
 
 export const ListingDraftSchema = SchemaFactory.createForClass(ListingDraft);

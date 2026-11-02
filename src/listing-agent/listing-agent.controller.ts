@@ -14,6 +14,7 @@ import {
   ValidationPipe,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 
 import { OrchestratorService } from './orchestrator.service';
 import { CreateListingDraftDto } from './dto/create-listing-draft.dto';
@@ -38,15 +39,40 @@ export class ListingAgentController {
   constructor(private readonly orchestrator: OrchestratorService) {}
 
   /**
-   * Upload 1-6 photos + cost price -> Creates draft, enqueues BullMQ job, returns draftId.
+   * Upload photos and/or raw details -> Creates draft, enqueues BullMQ job, returns draftId.
    */
   @Post('drafts')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @UseInterceptors(FilesInterceptor('images', 6, multerOptions))
   createDraft(
     @Body() dto: CreateListingDraftDto,
-    @UploadedFiles() files: Express.Multer.File[],
+    @UploadedFiles() files?: Express.Multer.File[],
   ) {
     return this.orchestrator.createDraft(dto, files);
+  }
+
+  /**
+   * Synchronous AI listing generation endpoint (POST /listing-agent/ai-generate or /listing-agent/generate).
+   * Direct generation without waiting for background worker polling.
+   */
+  @Post('ai-generate')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @UseInterceptors(FilesInterceptor('images', 6, multerOptions))
+  generateAiListing(
+    @Body() dto: CreateListingDraftDto,
+    @UploadedFiles() files?: Express.Multer.File[],
+  ) {
+    return this.orchestrator.generateDirect(dto, files);
+  }
+
+  @Post('generate')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @UseInterceptors(FilesInterceptor('images', 6, multerOptions))
+  generateListingAlias(
+    @Body() dto: CreateListingDraftDto,
+    @UploadedFiles() files?: Express.Multer.File[],
+  ) {
+    return this.orchestrator.generateDirect(dto, files);
   }
 
   /**
@@ -104,7 +130,7 @@ export class ListingAgentController {
   }
 
   /**
-   * Trigger AI image generation (separate optional step for Phase d).
+   * Trigger AI image generation (optional step for Phase d).
    */
   @Post('drafts/:id/generate-images')
   @HttpCode(HttpStatus.OK)

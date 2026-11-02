@@ -1,16 +1,34 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { GoogleGenAI } from '@google/genai';
+import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
+import {
+  VISION_SYSTEM_PROMPT,
+  buildVisionUserPrompt,
+} from '../config/prompts.config';
 
 export const VisionAnalysisSchema = z.object({
   category: z.string().min(1, 'Category is required'),
   material: z.string().min(1, 'Material is required'),
   color: z.string().min(1, 'Color is required'),
   style: z.string().min(1, 'Style is required'),
-  seating: z.number().nullable(),
+  seating: z.number().nullable().optional(),
   features: z.array(z.string()).min(1, 'At least 1 feature is required'),
+  specifications: z
+    .array(
+      z.object({
+        label: z.string(),
+        value: z.string(),
+      }),
+    )
+    .optional(),
   confidence: z.number().min(0).max(1),
+  suggestedPriceRange: z
+    .object({
+      min: z.number().min(0),
+      max: z.number().min(0),
+    })
+    .optional(),
 });
 
 export type VisionAnalysis = z.infer<typeof VisionAnalysisSchema>;
@@ -20,148 +38,173 @@ export interface VisionResult extends VisionAnalysis {
   raw: Record<string, any>;
 }
 
+// Max base64 bytes per image sent to Claude to avoid payload rejection (capped at ~1.5MB)
+const MAX_IMAGE_BASE64_BYTES = 1_500_000;
+
 @Injectable()
 export class VisionService {
   private readonly logger = new Logger(VisionService.name);
 
   constructor(private readonly configService: ConfigService) {}
 
-  private getClient(): GoogleGenAI {
-    const apiKey = this.configService.get<string>('GEMINI_API_KEY');
+  private getClient(): Anthropic {
+    const apiKey = this.configService.get<string>('ANTHROPIC_API_KEY');
     if (!apiKey) {
-      throw new Error('GEMINI_API_KEY is not defined in environment variables.');
+      throw new Error('ANTHROPIC_API_KEY is not defined in environment variables.');
     }
-    return new GoogleGenAI({ apiKey });
+    return new Anthropic({ apiKey });
   }
 
   private getModelName(): string {
-    return this.configService.get<string>('GEMINI_MODEL') || 'gemini-2.5-flash';
+    return (
+      this.configService.get<string>('ANTHROPIC_MODEL') ||
+      'claude-sonnet-5-5'
+    );
   }
 
   /**
-   * Fetches an image from a URL and converts it to base64 inlineData.
-   * Never logs raw base64 data to console/logs.
+   * Fetches an image from a URL, normalises its MIME type, and returns base64.
    */
   private async fetchImageAsInlineData(
     url: string,
-  ): Promise<{ mimeType: string; data: string }> {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(
-        `Failed to fetch image from URL: ${url} (status: ${response.status})`,
-      );
-    }
-    const arrayBuffer = await response.arrayBuffer();
-    const data = Buffer.from(arrayBuffer).toString('base64');
+  ): Promise<{ mediaType: Anthropic.Base64ImageSource['media_type']; data: string } | null> {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+      if (!response.ok) {
+        this.logger.warn(`Failed to fetch image: ${url} (status: ${response.status})`);
+        return null;
+      }
 
-    let mimeType = response.headers.get('content-type') || 'image/jpeg';
-    if (mimeType.includes(';')) {
-      mimeType = mimeType.split(';')[0].trim();
-    }
-    if (
-      !['image/jpeg', 'image/png', 'image/webp', 'image/jpg'].includes(mimeType)
-    ) {
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      let rawMime = response.headers.get('content-type') || 'image/jpeg';
+      if (rawMime.includes(';')) rawMime = rawMime.split(';')[0].trim();
+
       const lower = url.toLowerCase();
-      if (lower.endsWith('.png')) mimeType = 'image/png';
-      else if (lower.endsWith('.webp')) mimeType = 'image/webp';
-      else mimeType = 'image/jpeg';
-    }
+      if (!['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'].includes(rawMime)) {
+        if (lower.endsWith('.png')) rawMime = 'image/png';
+        else if (lower.endsWith('.webp')) rawMime = 'image/webp';
+        else rawMime = 'image/jpeg';
+      }
 
-    return { mimeType, data };
+      const mediaType = (
+        rawMime === 'image/jpg' ? 'image/jpeg' : rawMime
+      ) as Anthropic.Base64ImageSource['media_type'];
+
+      let data = buffer.toString('base64');
+
+      // If image exceeds Claude's safe buffer, trim to valid base64 boundary
+      if (data.length > MAX_IMAGE_BASE64_BYTES) {
+        this.logger.warn(
+          `Image ${url} base64 length ${data.length} exceeds limit. Trimming to ${MAX_IMAGE_BASE64_BYTES}.`,
+        );
+        const trimTo = MAX_IMAGE_BASE64_BYTES - (MAX_IMAGE_BASE64_BYTES % 4);
+        data = data.slice(0, trimTo);
+      }
+
+      return { mediaType, data };
+    } catch (err: any) {
+      this.logger.warn(`Error downloading image ${url}: ${err?.message}`);
+      return null;
+    }
   }
 
   /**
-   * Analyzes 1-6 product photos using Gemini Vision.
-   * Validates response with Zod and retries once on failure.
+   * Analyzes photos and/or raw text details using Claude Vision + Text.
+   * Validates response with Zod and retries once on schema failure.
    */
-  async analyze(imageUrls: string[]): Promise<VisionResult> {
-    if (!imageUrls || imageUrls.length === 0) {
-      throw new Error('No images provided for visual analysis.');
+  async analyze(imageUrls: string[] = [], rawDetails?: string): Promise<VisionResult> {
+    if ((!imageUrls || imageUrls.length === 0) && (!rawDetails || !rawDetails.trim())) {
+      throw new BadRequestException(
+        'At least 1 product image or raw text details must be provided.',
+      );
     }
 
-    this.logger.log(`Fetching ${imageUrls.length} source images for Gemini Vision analysis...`);
-    const imageParts = await Promise.all(
-      imageUrls.slice(0, 6).map((url) => this.fetchImageAsInlineData(url)),
-    );
+    let imageParts: { mediaType: Anthropic.Base64ImageSource['media_type']; data: string }[] = [];
+
+    if (imageUrls && imageUrls.length > 0) {
+      this.logger.log(
+        `Fetching up to ${Math.min(imageUrls.length, 6)} images for Claude Vision analysis...`,
+      );
+      const fetched = await Promise.all(
+        imageUrls.slice(0, 6).map((url) => this.fetchImageAsInlineData(url)),
+      );
+      imageParts = fetched.filter((p): p is NonNullable<typeof p> => p !== null);
+    }
 
     const client = this.getClient();
     const model = this.getModelName();
-
-    const promptText = `
-You are an expert furniture catalog analyst and appraiser.
-Carefully examine the provided furniture photo(s) and extract accurate physical attributes.
-
-Respond with strict JSON matching this schema:
-{
-  "category": "Furniture category (e.g. Sofa, Dining Table, Bed, Accent Chair, Coffee Table, Sideboard, Wardrobe)",
-  "material": "Primary upholstery or construction material visible (e.g. Luxury Velvet, Boucle, Solid Oak, Marble Effect, Metal)",
-  "color": "Dominant color of the item (e.g. Cream, Charcoal Grey, Navy Blue, Forest Green, Warm Brown)",
-  "style": "Aesthetic style (e.g. Modern Luxury, Contemporary, Scandinavian, Chesterfield, Mid-Century)",
-  "seating": <integer number of seats if it is a sofa, chair, or dining set, or null if not applicable>,
-  "features": ["3 to 6 distinct physical features clearly visible in the photos"],
-  "confidence": <decimal between 0.0 and 1.0 rating your confidence in this identification based on photo clarity>
-}
-
-CRITICAL RULES:
-1. List in "features" ONLY what is clearly visible in the photos (e.g. silhouette/shape, tufting/stitching, leg style/finish, visible upholstery texture, armrest shape).
-2. Do NOT infer internal construction (such as foam, inner frame, springs, webbing, internal joinery) or warranty, origin, or anything not directly visible.
-3. If you cannot see it, do not list it.
-4. NEVER guess dimensions or measurements. If uncertain, do NOT guess.
-5. "seating" must be a number (e.g. 3) or null.
-6. Only state facts clearly visible in the provided photo(s).
-7. Output MUST be valid JSON only.
-`;
+    const userPrompt = buildVisionUserPrompt(rawDetails);
 
     // Attempt 1
     try {
-      this.logger.log(`Calling Gemini Vision model ${model}...`);
-      const rawText = await this.callGemini(client, model, imageParts, promptText);
+      this.logger.log(`Calling Claude (${model}) for visual & attribute analysis...`);
+      const rawText = await this.callClaude(client, model, imageParts, userPrompt);
       const parsed = this.parseAndValidate(rawText);
       return this.formatResult(parsed);
     } catch (firstErr: any) {
       this.logger.warn(
-        `Gemini Vision attempt 1 failed (${firstErr?.message}). Retrying once with strict reminder...`,
+        `Claude Vision attempt 1 failed (${firstErr?.message}). Retrying once with strict reminder...`,
       );
 
-      // Attempt 2 (Retry once)
+      // Attempt 2 (Retry)
       try {
-        const retryPrompt = `${promptText}\n\nATTENTION: Your previous response was invalid. Ensure strictly valid JSON matching the exact schema with all fields. Remember: If you cannot see it, do not list it. Never infer internal construction.`;
-        const retryRaw = await this.callGemini(client, model, imageParts, retryPrompt);
+        const retryPrompt = `${userPrompt}\n\nATTENTION: Your previous response was invalid. Return strictly valid JSON adhering to the exact schema. No markdown backticks.`;
+        const retryRaw = await this.callClaude(client, model, imageParts, retryPrompt);
         const parsed = this.parseAndValidate(retryRaw);
         return this.formatResult(parsed);
       } catch (retryErr: any) {
         this.logger.error(
-          `Gemini Vision attempt 2 (retry) also failed: ${retryErr?.message}`,
+          `Claude Vision attempt 2 failed: ${retryErr?.message}`,
         );
         throw new Error(
-          `Gemini Vision analysis failed after retry: ${retryErr?.message || retryErr}`,
+          `Claude analysis failed: ${retryErr?.message || retryErr}`,
         );
       }
     }
   }
 
-  private async callGemini(
-    client: GoogleGenAI,
+  private async callClaude(
+    client: Anthropic,
     model: string,
-    imageParts: { mimeType: string; data: string }[],
+    imageParts: { mediaType: Anthropic.Base64ImageSource['media_type']; data: string }[],
     prompt: string,
   ): Promise<string> {
-    const response = await client.models.generateContent({
-      model,
-      contents: [
-        ...imageParts.map((part) => ({
-          inlineData: part,
-        })),
-        { text: prompt },
-      ],
-      config: {
-        responseMimeType: 'application/json',
-      },
+    const contentBlocks: (Anthropic.TextBlockParam | Anthropic.ImageBlockParam)[] = [];
+
+    for (const part of imageParts) {
+      contentBlocks.push({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: part.mediaType,
+          data: part.data,
+        },
+      });
+    }
+
+    contentBlocks.push({
+      type: 'text',
+      text: prompt,
     });
 
-    const text = response.text || '';
+    const message = await client.messages.create({
+      model,
+      max_tokens: 1500,
+      system: VISION_SYSTEM_PROMPT,
+      messages: [
+        {
+          role: 'user',
+          content: contentBlocks,
+        },
+      ],
+    });
+
+    const textBlock = message.content.find((b) => b.type === 'text');
+    const text = textBlock && textBlock.type === 'text' ? textBlock.text : '';
     if (!text.trim()) {
-      throw new Error('Gemini returned an empty response.');
+      throw new Error('Claude returned an empty response.');
     }
     return text;
   }
@@ -179,10 +222,9 @@ CRITICAL RULES:
   }
 
   private formatResult(analysis: VisionAnalysis): VisionResult {
-    // If confidence < 0.6 set reviewRequired = true
     const reviewRequired = analysis.confidence < 0.6;
     this.logger.log(
-      `Vision analysis complete: category="${analysis.category}", confidence=${analysis.confidence}, reviewRequired=${reviewRequired}`,
+      `Analysis complete: category="${analysis.category}", confidence=${analysis.confidence}, reviewRequired=${reviewRequired}`,
     );
 
     return {

@@ -53,4 +53,18 @@ export class UpdateListingDraftDto {
   @IsOptional()
   @IsString()
   subCategoryId?: string;
+
+  /**
+   * UK compliance confirmation: physical fire safety label confirmed on upholstered item.
+   */
+  @IsOptional()
+  @IsBoolean()
+  fireSafetyLabelConfirmed?: boolean;
+
+  /**
+   * Location where stock is held in the UK.
+   */
+  @IsOptional()
+  @IsString()
+  stockLocation?: string;
 }

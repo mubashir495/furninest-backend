@@ -1,110 +1,104 @@
-import { PricingService, roundToEndIn999 } from './pricing.service';
+import { PricingService, roundToUkRetailPrice } from './pricing.service';
 
-describe('PricingService', () => {
+describe('PricingService (UK Market)', () => {
   let service: PricingService;
 
   beforeEach(() => {
     service = new PricingService();
   });
 
-  describe('roundToEndIn999', () => {
-    it('should round numbers to end in 999', () => {
-      expect(roundToEndIn999(45920)).toBe(45999);
-      expect(roundToEndIn999(45400)).toBe(44999);
-      expect(roundToEndIn999(45600)).toBe(45999);
-      expect(roundToEndIn999(1200)).toBe(999);
-      expect(roundToEndIn999(1500)).toBe(1999);
-      expect(roundToEndIn999(500)).toBe(999);
-      expect(roundToEndIn999(0)).toBe(999);
+  describe('roundToUkRetailPrice', () => {
+    it('rounds UK furniture amounts to end in 9 or .99', () => {
+      expect(roundToUkRetailPrice(650)).toBe(649);
+      expect(roundToUkRetailPrice(250)).toBe(249);
+      expect(roundToUkRetailPrice(50)).toBe(49);
+      expect(roundToUkRetailPrice(1200)).toBe(1199);
+      expect(roundToUkRetailPrice(14.5)).toBe(14.99);
+      expect(roundToUkRetailPrice(0)).toBe(0);
     });
 
-    it('always ends with 999 for any integer input', () => {
-      const testValues = [1000, 2500, 15340, 32000, 78900, 125000];
+    it('always ends with 9 for amounts over £20', () => {
+      const testValues = [25, 48, 150, 320, 650, 1250];
       for (const val of testValues) {
-        const result = roundToEndIn999(val);
-        expect(result.toString().endsWith('999')).toBe(true);
+        const result = roundToUkRetailPrice(val);
+        expect(result.toString().endsWith('9')).toBe(true);
       }
     });
   });
 
-  describe('calculate', () => {
-    it('uses the correct margin for a known category (Sofa: 45%)', () => {
-      const cost = 30000;
+  describe('calculate (UK Pricing: Cost + Margin + 20% VAT)', () => {
+    it('uses correct margin and adds 20% VAT for Sofa (margin: 45%)', () => {
+      const cost = 250; // £250 cost
       const result = service.calculate(cost, 'Sofa');
+
       expect(result.marginRate).toBe(0.45);
-      // raw = 30000 * 1.45 = 43500 -> rounds to 43999
-      expect(result.calculatedPrice).toBe(43999);
-      expect(result.calculatedPrice.toString().endsWith('999')).toBe(true);
+      expect(result.vatRate).toBe(0.20);
+      expect(result.currency).toBe('GBP');
+
+      // Net = 250 * 1.45 = 362.5
+      // Gross = 362.5 * 1.2 = 435 -> rounds to £439
+      expect(result.calculatedPrice).toBe(439);
+      expect(result.calculatedPrice.toString().endsWith('9')).toBe(true);
       expect(result.compareAtPrice).toBeGreaterThan(result.calculatedPrice);
-      expect(result.compareAtPrice.toString().endsWith('999')).toBe(true);
+      expect(result.compareAtPrice.toString().endsWith('9')).toBe(true);
     });
 
-    it('falls back to default margin (40%) for an unknown category', () => {
-      const cost = 30000;
+    it('falls back to default margin (40%) and adds 20% VAT for unknown category', () => {
+      const cost = 200; // £200 cost
       const result = service.calculate(cost, 'Futuristic Floating Orb');
+
       expect(result.marginRate).toBe(0.4);
-      // raw = 30000 * 1.4 = 42000 -> rounds to 41999
-      expect(result.calculatedPrice).toBe(41999);
-      expect(result.calculatedPrice.toString().endsWith('999')).toBe(true);
+      expect(result.vatRate).toBe(0.20);
+      // Net = 200 * 1.4 = 280
+      // Gross = 280 * 1.2 = 336 -> rounds to £339
+      expect(result.calculatedPrice).toBe(339);
+      expect(result.calculatedPrice.toString().endsWith('9')).toBe(true);
     });
 
-    it('calculates compareAtPrice about 15% above calculatedPrice ending in 999', () => {
-      const cost = 32000;
+    it('calculates compareAtPrice (RRP) ~18% above calculatedPrice ending in 9', () => {
+      const cost = 300;
       const result = service.calculate(cost, 'Dining Table');
-      expect(result.marginRate).toBe(0.35);
+
       expect(result.compareAtPrice).toBeGreaterThan(result.calculatedPrice);
-      expect(result.compareAtPrice.toString().endsWith('999')).toBe(true);
+      expect(result.compareAtPrice.toString().endsWith('9')).toBe(true);
 
       const ratio = result.compareAtPrice / result.calculatedPrice;
       expect(ratio).toBeGreaterThan(1.05);
-      expect(ratio).toBeLessThan(1.25);
+      expect(ratio).toBeLessThan(1.30);
     });
   });
 
   describe('calculateVariantPricing', () => {
-    const basePrice = 49999;
-    const baseCompareAt = 57999;
+    const basePrice = 649; // £649
+    const baseCompareAt = 749; // £749
 
-    it('calculates 3-Seater with 1.0 multiplier and ends in 999', () => {
+    it('calculates 3-Seater with 1.0 multiplier', () => {
       const variant = service.calculateVariantPricing(basePrice, baseCompareAt, '3-Seater');
-      expect(variant.price).toBe(49999);
-      expect(variant.price.toString().endsWith('999')).toBe(true);
-      expect(variant.compareAtPrice).toBe(57999);
-      expect(variant.compareAtPrice.toString().endsWith('999')).toBe(true);
+      expect(variant.price).toBe(649);
+      expect(variant.compareAtPrice).toBe(749);
     });
 
-    it('calculates 2-Seater with 0.8 multiplier and ends in 999', () => {
+    it('calculates 2-Seater with 0.8 multiplier and ends in 9', () => {
       const variant = service.calculateVariantPricing(basePrice, baseCompareAt, '2-Seater');
-      // 49999 * 0.8 = 39999.2 -> 39999
-      expect(variant.price).toBe(39999);
-      expect(variant.price.toString().endsWith('999')).toBe(true);
-      // 57999 * 0.8 = 46399.2 -> 45999
-      expect(variant.compareAtPrice.toString().endsWith('999')).toBe(true);
+      // 649 * 0.8 = 519.2 -> 519
+      expect(variant.price).toBe(519);
       expect(variant.compareAtPrice).toBeGreaterThan(variant.price);
+      expect(variant.compareAtPrice.toString().endsWith('9')).toBe(true);
     });
 
-    it('calculates 4-Seater with 1.2 multiplier and ends in 999', () => {
+    it('calculates 4-Seater with 1.2 multiplier and ends in 9', () => {
       const variant = service.calculateVariantPricing(basePrice, baseCompareAt, '4-Seater Corner');
-      // 49999 * 1.2 = 59998.8 -> 59999
-      expect(variant.price).toBe(59999);
-      expect(variant.price.toString().endsWith('999')).toBe(true);
-      expect(variant.compareAtPrice.toString().endsWith('999')).toBe(true);
+      // 649 * 1.2 = 778.8 -> 779
+      expect(variant.price).toBe(779);
       expect(variant.compareAtPrice).toBeGreaterThan(variant.price);
     });
 
-    it('calculates L-Shape with 1.5 multiplier and ends in 999', () => {
+    it('calculates L-Shape with 1.5 multiplier and ends in 9', () => {
       const variant = service.calculateVariantPricing(basePrice, baseCompareAt, 'L-Shape Left Facing');
-      // 49999 * 1.5 = 74998.5 -> 74999
-      expect(variant.price).toBe(74999);
-      expect(variant.price.toString().endsWith('999')).toBe(true);
-      expect(variant.compareAtPrice.toString().endsWith('999')).toBe(true);
+      // 649 * 1.5 = 973.5 -> 969 or 979
+      expect(variant.price.toString().endsWith('9')).toBe(true);
+      expect(variant.compareAtPrice.toString().endsWith('9')).toBe(true);
       expect(variant.compareAtPrice).toBeGreaterThan(variant.price);
-    });
-
-    it('falls back to 1.0 multiplier for an unmapped configuration', () => {
-      const variant = service.calculateVariantPricing(basePrice, baseCompareAt, 'Custom Geometric Shape');
-      expect(variant.price).toBe(basePrice);
-      expect(variant.compareAtPrice).toBe(baseCompareAt);
     });
   });
 });

@@ -14,8 +14,8 @@ describe('VariantsService Unit Tests', () => {
   beforeEach(() => {
     const configService = {
       get: jest.fn((key: string) => {
-        if (key === 'GEMINI_API_KEY') return 'test-key';
-        if (key === 'GEMINI_MODEL') return 'gemini-2.5-flash';
+        if (key === 'ANTHROPIC_API_KEY') return 'test-key';
+        if (key === 'ANTHROPIC_MODEL') return 'claude-sonnet-5-5';
         return null;
       }),
     } as unknown as ConfigService;
@@ -73,17 +73,19 @@ describe('VariantsService Unit Tests', () => {
     };
 
     const basePricing: PricingResult = {
-      costPrice: 30000,
+      costPrice: 250,
       marginRate: 0.45,
-      calculatedPrice: 43999,
-      compareAtPrice: 50999,
+      vatRate: 0.20,
+      calculatedPrice: 439,
+      compareAtPrice: 519,
+      currency: 'GBP',
     };
 
     const sampleImages = ['https://example.com/sofa-front.jpg', 'https://example.com/sofa-side.jpg'];
 
     it('assigns source photos ONLY to config matching detected seating (3-Seater) and needsPhoto: true to others', async () => {
-      // Mock callGemini to return 3 variants: 3-Seater, 2-Seater, and L-Shape
-      jest.spyOn<any, any>(service, 'callGemini').mockResolvedValue(
+      // Mock callClaude to return 3 variants: 3-Seater, 2-Seater, and L-Shape
+      jest.spyOn<any, any>(service, 'callClaude').mockResolvedValue(
         JSON.stringify([
           { configName: '3-Seater', colorName: 'Charcoal Grey' },
           { configName: '2-Seater', colorName: 'Cream' },
@@ -101,7 +103,7 @@ describe('VariantsService Unit Tests', () => {
       expect(v3.images).toEqual(sampleImages);
       expect(v3.needsPhoto).toBe(false);
       expect(v3.suggested).toBe(true);
-      expect(v3.price).toBe(43999); // multiplier 1.0
+      expect(v3.price).toBe(439); // multiplier 1.0
       expect(v3.stock).toBe(0);
       expect(v3.isActive).toBe(false);
 
@@ -111,10 +113,10 @@ describe('VariantsService Unit Tests', () => {
       expect(v2.images).toEqual([]);
       expect(v2.needsPhoto).toBe(true);
       expect(v2.suggested).toBe(true);
-      // multiplier 0.8: 43999 * 0.8 = 35199.2 -> 34999
-      expect(v2.price).toBe(34999);
-      expect(v2.price.toString().endsWith('999')).toBe(true);
-      expect(v2.compareAtPrice!.toString().endsWith('999')).toBe(true);
+      // multiplier 0.8: 439 * 0.8 = 351.2 -> 349
+      expect(v2.price).toBe(349);
+      expect(v2.price.toString().endsWith('9')).toBe(true);
+      expect(v2.compareAtPrice!.toString().endsWith('9')).toBe(true);
 
       // 3. Non-photographed config (L-Shape):
       const vL = variants.find((v) => v.configName === 'L-Shape Left Facing')!;
@@ -122,10 +124,10 @@ describe('VariantsService Unit Tests', () => {
       expect(vL.images).toEqual([]);
       expect(vL.needsPhoto).toBe(true);
       expect(vL.suggested).toBe(true);
-      // multiplier 1.5: 43999 * 1.5 = 65998.5 -> 65999
-      expect(vL.price).toBe(65999);
-      expect(vL.price.toString().endsWith('999')).toBe(true);
-      expect(vL.compareAtPrice!.toString().endsWith('999')).toBe(true);
+      // multiplier 1.5: 439 * 1.5 = 658.5 -> 659
+      expect(vL.price).toBe(659);
+      expect(vL.price.toString().endsWith('9')).toBe(true);
+      expect(vL.compareAtPrice!.toString().endsWith('9')).toBe(true);
     });
 
     it('assigns photos to first variant when seating is null (e.g. Dining Table) and needsPhoto: true to others', async () => {
@@ -140,15 +142,17 @@ describe('VariantsService Unit Tests', () => {
       };
 
       const diningPricing: PricingResult = {
-        costPrice: 40000,
+        costPrice: 300,
         marginRate: 0.35,
-        calculatedPrice: 53999,
-        compareAtPrice: 62999,
+        vatRate: 0.20,
+        calculatedPrice: 489,
+        compareAtPrice: 579,
+        currency: 'GBP',
       };
 
       const tableImages = ['https://example.com/table.jpg'];
 
-      jest.spyOn<any, any>(service, 'callGemini').mockResolvedValue(
+      jest.spyOn<any, any>(service, 'callClaude').mockResolvedValue(
         JSON.stringify([
           { configName: 'Table Only (160cm)', colorName: 'Warm Brown' },
           { configName: 'Table + 6 Chairs Set', colorName: 'Warm Brown' },
@@ -169,7 +173,7 @@ describe('VariantsService Unit Tests', () => {
       expect(variants[1].needsPhoto).toBe(true);
       expect(variants[1].suggested).toBe(true);
       // Multiplier for Table + 6 Chairs Set is 1.8
-      expect(variants[1].price.toString().endsWith('999')).toBe(true);
+      expect(variants[1].price.toString().endsWith('9')).toBe(true);
     });
   });
 });

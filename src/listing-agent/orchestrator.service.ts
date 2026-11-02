@@ -57,24 +57,33 @@ export class OrchestratorService {
   ) {}
 
   /**
-   * Admin creates a new draft by uploading 1-6 photos + cost price.
-   * Uploads photos, saves draft with status queued, and adds job to BullMQ queue.
+   * Admin creates a new draft by uploading 0-6 photos and/or raw details + optional cost price in GBP (£).
+   * Uploads photos (if any), saves draft with status queued, and adds job to BullMQ queue.
    */
   async createDraft(
     dto: CreateListingDraftDto,
-    files: Express.Multer.File[],
+    files?: Express.Multer.File[],
   ): Promise<{ draftId: string; draft: ListingDraftDocument }> {
-    if (!files || files.length === 0) {
-      throw new BadRequestException('At least 1 product photo is required (max 6).');
+    const hasFiles = Array.isArray(files) && files.length > 0;
+    const hasRawDetails = Boolean(dto.rawDetails?.trim());
+
+    if (!hasFiles && !hasRawDetails) {
+      throw new BadRequestException(
+        'At least 1 product photo or raw description text must be provided.',
+      );
     }
-    if (files.length > 6) {
+
+    if (hasFiles && files!.length > 6) {
       throw new BadRequestException('A maximum of 6 product photos can be uploaded.');
     }
 
-    this.logger.log(`Uploading ${files.length} source images for new listing draft...`);
-    const imageUrls = await this.uploadService.uploadImages(files, 'listing-drafts');
+    let imageUrls: string[] = [];
+    if (hasFiles) {
+      this.logger.log(`Uploading ${files!.length} source images for new listing draft...`);
+      imageUrls = await this.uploadService.uploadImages(files!, 'listing-drafts');
+    }
 
-    const costPrice = Number(dto.costPrice);
+    const costPrice = Number(dto.costPrice || 0);
     const initialPricing = this.pricingService.calculate(costPrice);
 
     const draft = new this.draftModel({
@@ -86,6 +95,10 @@ export class OrchestratorService {
       subCategoryId: dto.subCategoryId
         ? new Types.ObjectId(dto.subCategoryId)
         : null,
+      language: dto.language || 'en',
+      rawDetails: dto.rawDetails || null,
+      fireSafetyLabelConfirmed: Boolean(dto.fireSafetyLabelConfirmed),
+      stockLocation: dto.stockLocation?.trim() || 'UK warehouse',
       reviewRequired: false,
     });
 
@@ -111,13 +124,12 @@ export class OrchestratorService {
   }
 
   /**
-   * BullMQ worker calls this method to process a draft through Phase (b) pipeline:
+   * BullMQ worker calls this method to process a draft through Claude AI pipeline:
    * 1. status -> analyzing
-   * 2. Vision analysis (Gemini Vision with Zod validation + 1 retry)
-   * 3. Pricing calculation (pure code, NO LLM)
-   * 4. Parallel execution of SEO generator and Variants generator
+   * 2. Claude Vision & attribute analysis (benchmarked to UK retail standards)
+   * 3. UK Pricing calculation (Cost + Margin + 20% VAT, rounded to UK price point e.g. £649)
+   * 4. Parallel execution of British English SEO generator and UK Variants generator
    * 5. Save everything and transition status -> pending_approval
-   * On error: status -> failed + error message, rethrow for BullMQ retry
    */
   async processDraft(draftId: string): Promise<ListingDraftDocument> {
     const draft = await this.draftModel.findById(draftId);
@@ -126,7 +138,7 @@ export class OrchestratorService {
       throw new NotFoundException(`Draft ${draftId} not found.`);
     }
 
-    this.logger.log(`Draft ${draftId}: Starting AI listing pipeline...`);
+    this.logger.log(`Draft ${draftId}: Starting Claude AI listing pipeline for UK market...`);
     draft.status = ListingDraftStatus.ANALYZING;
     draft.error = null;
     await draft.save();
@@ -144,9 +156,14 @@ export class OrchestratorService {
     });
 
     const pipelinePromise = (async () => {
-      // Step 1: Gemini Vision Analysis
-      this.logger.log(`Draft ${draftId}: [Step 1/3] Running Gemini Vision analysis...`);
-      const visionResult = await this.visionService.analyze(draft.sourceImages);
+      const rawDetails = draft.rawDetails || undefined;
+
+      // Step 1: Claude Vision & Text Attribute Extraction (British English)
+      this.logger.log(`Draft ${draftId}: [Step 1/3] Running Claude Vision & Attribute analysis...`);
+      const visionResult = await this.visionService.analyze(
+        draft.sourceImages || [],
+        rawDetails,
+      );
 
       draft.analysis = {
         category: visionResult.category,
@@ -155,6 +172,7 @@ export class OrchestratorService {
         style: visionResult.style,
         seating: visionResult.seating,
         features: visionResult.features,
+        specifications: visionResult.specifications || [],
         confidence: visionResult.confidence,
         raw: visionResult.raw,
       };
@@ -163,22 +181,35 @@ export class OrchestratorService {
       }
       await draft.save();
 
-      // Step 2: Pricing engine (pure code, NO LLM)
-      this.logger.log(`Draft ${draftId}: [Step 2/3] Calculating rule-based pricing...`);
+      // Step 2: UK Pricing engine (Cost + Margin + 20% VAT)
+      this.logger.log(`Draft ${draftId}: [Step 2/3] Calculating UK retail pricing...`);
+      let effectiveCost = draft.costPrice;
+      if (!effectiveCost && visionResult.suggestedPriceRange?.min) {
+        // Derive approximate wholesale cost from typical UK retail min price
+        effectiveCost = Math.round(visionResult.suggestedPriceRange.min / 1.7);
+        draft.costPrice = effectiveCost;
+      }
+
       const pricingResult = this.pricingService.calculate(
-        draft.costPrice,
+        effectiveCost,
         visionResult.category,
       );
-      draft.pricing = pricingResult;
 
-      // Step 3: Run SEO generator and Variants generator in parallel
-      this.logger.log(`Draft ${draftId}: [Step 3/3] Generating SEO content and Variants in parallel...`);
+      draft.pricing = {
+        ...pricingResult,
+        suggestedPriceRange: visionResult.suggestedPriceRange || null,
+      };
+
+      // Step 3: Run British English SEO generator and UK Variants generator in parallel
+      this.logger.log(
+        `Draft ${draftId}: [Step 3/3] Generating British English SEO content and UK Variants in parallel...`,
+      );
       const [seoResult, variantsResult] = await Promise.all([
-        this.seoService.generate(visionResult),
+        this.seoService.generate(visionResult, rawDetails),
         this.variantsService.generate(
           visionResult,
           pricingResult,
-          draft.sourceImages,
+          draft.sourceImages || [],
         ),
       ]);
 
@@ -205,11 +236,22 @@ export class OrchestratorService {
       draft.status = ListingDraftStatus.FAILED;
       draft.error = err?.message || 'Unexpected processing error occurred.';
       await draft.save();
-      // Rethrow so BullMQ can trigger automatic retries with backoff
       throw err;
     } finally {
       if (timer) clearTimeout(timer);
     }
+  }
+
+  /**
+   * Synchronous / Direct AI listing generation.
+   * Runs the full Claude pipeline and returns the draft object without waiting on a queue.
+   */
+  async generateDirect(
+    dto: CreateListingDraftDto,
+    files?: Express.Multer.File[],
+  ): Promise<ListingDraftDocument> {
+    const created = await this.createDraft(dto, files);
+    return this.processDraft(created.draftId);
   }
 
   /**
@@ -259,78 +301,106 @@ export class OrchestratorService {
   ): Promise<ListingDraftDocument> {
     const draft = await this.getDraftById(id);
 
-    if (dto.costPrice !== undefined) {
-      draft.costPrice = dto.costPrice;
-      if (draft.pricing) {
-        draft.pricing.costPrice = dto.costPrice;
-      }
-    }
+    if (dto.costPrice !== undefined) draft.costPrice = Number(dto.costPrice);
     if (dto.status !== undefined) draft.status = dto.status;
-    if (dto.analysis !== undefined) {
-      draft.analysis = { ...draft.analysis, ...dto.analysis } as any;
+    if (dto.reviewRequired !== undefined) draft.reviewRequired = dto.reviewRequired;
+    if (dto.fireSafetyLabelConfirmed !== undefined) {
+      draft.fireSafetyLabelConfirmed = dto.fireSafetyLabelConfirmed;
     }
-    if (dto.seo !== undefined) {
-      draft.seo = { ...draft.seo, ...dto.seo } as any;
-    }
-    if (dto.pricing !== undefined) {
-      draft.pricing = { ...draft.pricing, ...dto.pricing } as any;
-    }
-    if (dto.variants !== undefined) draft.variants = dto.variants;
-    if (dto.generatedImages !== undefined) {
-      draft.generatedImages = dto.generatedImages;
-    }
-    if (dto.reviewRequired !== undefined) {
-      draft.reviewRequired = dto.reviewRequired;
+    if (dto.stockLocation !== undefined) {
+      draft.stockLocation = dto.stockLocation;
     }
     if (dto.categoryId !== undefined) {
-      draft.categoryId = dto.categoryId
-        ? new Types.ObjectId(dto.categoryId)
-        : null;
+      draft.categoryId = dto.categoryId ? new Types.ObjectId(dto.categoryId) : null;
     }
     if (dto.subCategoryId !== undefined) {
-      draft.subCategoryId = dto.subCategoryId
-        ? new Types.ObjectId(dto.subCategoryId)
-        : null;
+      draft.subCategoryId = dto.subCategoryId ? new Types.ObjectId(dto.subCategoryId) : null;
+    }
+
+    if (dto.analysis) {
+      draft.analysis = {
+        ...draft.analysis,
+        ...dto.analysis,
+      };
+    }
+
+    if (dto.seo) {
+      draft.seo = {
+        ...draft.seo,
+        ...dto.seo,
+      };
+    }
+
+    if (dto.pricing) {
+      draft.pricing = {
+        ...draft.pricing,
+        ...dto.pricing,
+      };
+    }
+
+    if (dto.variants) {
+      draft.variants = dto.variants as any;
+    }
+
+    if (dto.generatedImages) {
+      draft.generatedImages = dto.generatedImages as any;
     }
 
     await draft.save();
+    this.logger.log(`Draft ${id} updated by admin.`);
     return draft;
   }
 
   /**
-   * Admin approves a draft. AI can NEVER auto-approve.
+   * Admin approves a draft. Transitions status from pending_approval to approved.
    */
   async approveDraft(id: string): Promise<ListingDraftDocument> {
     const draft = await this.getDraftById(id);
+
+    if (draft.status !== ListingDraftStatus.PENDING_APPROVAL) {
+      throw new BadRequestException(
+        `Cannot approve draft with status '${draft.status}'. Only drafts in 'pending_approval' can be approved.`,
+      );
+    }
+
     draft.status = ListingDraftStatus.APPROVED;
-    draft.error = null;
+    draft.reviewRequired = false;
     await draft.save();
+
     this.logger.log(`Draft ${id} approved by admin.`);
     return draft;
   }
 
   /**
-   * Publish creates the real Product.
-   * SAFETY RULE: AI can NEVER publish.
-   * Requires status === 'approved', otherwise returns 400 Bad Request.
+   * Publishes an approved draft by converting it into a real Product in the catalogue.
+   * Enforces UK compliance on fire safety labelling for upholstered items.
+   * Triggers ISR revalidation.
    */
-  async publishDraft(id: string): Promise<{
-    success: boolean;
-    message: string;
-    productId: string;
-    product: ProductDocument;
-  }> {
+  async publishDraft(
+    id: string,
+  ): Promise<{ success: boolean; message: string; productId: string; product: ProductDocument }> {
     const draft = await this.getDraftById(id);
 
     if (draft.status !== ListingDraftStatus.APPROVED) {
       throw new BadRequestException(
-        `Draft cannot be published because it is not approved. Current status: ${draft.status}. Please approve the draft first.`,
+        `Draft must be in 'approved' status to be published. Current status: '${draft.status}'`,
       );
     }
 
-    // Resolve Category & SubCategory
-    let categoryId = draft.categoryId;
+    // UK Compliance Safety Rail: Check fire safety label confirmation on upholstered furniture
+    const isUpholstered =
+      /sofa|chair|couch|armchair|upholster|fabric|cushion|stool|headboard|bed/i.test(
+        `${draft.analysis?.category || ''} ${draft.analysis?.material || ''}`,
+      );
+
+    if (isUpholstered && !draft.fireSafetyLabelConfirmed) {
+      throw new BadRequestException(
+        'UK Compliance Notice: For upholstered furniture items, the physical fire safety label must be verified and confirmed by the administrator before publishing.',
+      );
+    }
+
     let subCategoryId = draft.subCategoryId;
+    let categoryId = draft.categoryId;
 
     if (!subCategoryId) {
       const firstSub = await this.subCategoryModel.findOne().exec();
@@ -366,17 +436,19 @@ export class OrchestratorService {
 
     const price =
       draft.pricing?.calculatedPrice ||
-      Math.round(draft.costPrice * 1.4) ||
-      999;
+      Math.round((draft.costPrice || 200) * 1.6) ||
+      299;
 
     const shortDescription =
-      draft.seo?.metaDescription || draft.seo?.title || 'Luxury furniture handcrafted with premium materials.';
+      draft.seo?.metaDescription ||
+      draft.seo?.title ||
+      'Quality British home furniture crafted with premium materials.';
 
     const longDescription =
       draft.seo?.description ||
       draft.seo?.metaDescription ||
       draft.seo?.title ||
-      'Experience unmatched comfort and timeless design with this luxury furniture piece.';
+      'Experience unmatched comfort and timeless design with this British luxury furniture piece.';
 
     // Map draft variants to real ProductVariants if any exist
     const variants = (draft.variants || []).map((v, idx) => ({
@@ -402,13 +474,14 @@ export class OrchestratorService {
       price,
       discount: 0,
       stock: variants.reduce((sum, v) => sum + (v.stock || 0), 0),
-      thumbnailImage: draft.sourceImages[0] || '',
+      thumbnailImage: draft.sourceImages?.[0] || '',
       images: draft.sourceImages || [],
       variants,
       category: categoryId,
       subCategory: subCategoryId,
       material: draft.analysis?.material || '',
       features: draft.analysis?.features || [],
+      specifications: draft.analysis?.specifications || [],
       seoTitle: draft.seo?.title || title,
       seoDescription: draft.seo?.metaDescription || shortDescription,
       isActive: true,
@@ -463,16 +536,16 @@ export class OrchestratorService {
   }
 
   /**
-   * Placeholder for separate image generation step (Phase d).
+   * Image generation placeholder (Phase d).
    */
   async generateImages(id: string): Promise<{ message: string; draftId: string }> {
     const draft = await this.getDraftById(id);
-    const images = await this.imageGenService.generateImages(
+    await this.imageGenService.generateImages(
       draft._id.toString(),
       draft.sourceImages,
     );
     return {
-      message: 'Image generation endpoint ready for phase (d).',
+      message: 'Image generation completed.',
       draftId: draft._id.toString(),
     };
   }
