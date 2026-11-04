@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
@@ -43,6 +43,12 @@ export class UpdateListingDraftDto {
   generatedImages?: any[];
 
   @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null || value === '') return undefined;
+    if (value === 'true' || value === true || value === 1 || value === '1') return true;
+    if (value === 'false' || value === false || value === 0 || value === '0') return false;
+    return value;
+  })
   @IsBoolean()
   reviewRequired?: boolean;
 
@@ -58,6 +64,12 @@ export class UpdateListingDraftDto {
    * UK compliance confirmation: physical fire safety label confirmed on upholstered item.
    */
   @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null || value === '') return undefined;
+    if (value === 'true' || value === true || value === 1 || value === '1') return true;
+    if (value === 'false' || value === false || value === 0 || value === '0') return false;
+    return value;
+  })
   @IsBoolean()
   fireSafetyLabelConfirmed?: boolean;
 

@@ -19,6 +19,10 @@ import { VisionService } from './steps/vision.service';
 import { SeoService } from './steps/seo.service';
 import { VariantsService } from './steps/variants.service';
 import { PricingService } from './steps/pricing.service';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import { CreateListingDraftDto } from './dto/create-listing-draft.dto';
+import { UpdateListingDraftDto } from './dto/update-listing-draft.dto';
 import { ImageGenService } from './steps/image-gen.service';
 
 const getQueueToken = (name: string) => `BullQueue_${name}`;
@@ -188,6 +192,51 @@ describe('OrchestratorService — AI Listing Agent', () => {
         exec: jest.fn().mockResolvedValue(null),
       });
       await expect(service.getDraftById('000000000000000000000001')).rejects.toThrow();
+    });
+  });
+
+  describe('fireSafetyLabelConfirmed validation and transformation', () => {
+    it('correctly transforms string "true" and "false" from multipart/form-data into booleans for CreateListingDraftDto', async () => {
+      const dtoTrue = plainToInstance(CreateListingDraftDto, {
+        fireSafetyLabelConfirmed: 'true',
+      });
+      const errorsTrue = await validate(dtoTrue);
+      expect(errorsTrue.length).toBe(0);
+      expect(dtoTrue.fireSafetyLabelConfirmed).toBe(true);
+
+      const dtoFalse = plainToInstance(CreateListingDraftDto, {
+        fireSafetyLabelConfirmed: 'false',
+      });
+      const errorsFalse = await validate(dtoFalse);
+      expect(errorsFalse.length).toBe(0);
+      expect(dtoFalse.fireSafetyLabelConfirmed).toBe(false);
+    });
+
+    it('correctly handles actual booleans for CreateListingDraftDto and UpdateListingDraftDto', async () => {
+      const dto = plainToInstance(CreateListingDraftDto, {
+        fireSafetyLabelConfirmed: true,
+      });
+      const errors = await validate(dto);
+      expect(errors.length).toBe(0);
+      expect(dto.fireSafetyLabelConfirmed).toBe(true);
+
+      const updateDto = plainToInstance(UpdateListingDraftDto, {
+        fireSafetyLabelConfirmed: 'true',
+      });
+      const updateErrors = await validate(updateDto);
+      expect(updateErrors.length).toBe(0);
+      expect(updateDto.fireSafetyLabelConfirmed).toBe(true);
+    });
+
+    it('fails validation when non-boolean strings are provided', async () => {
+      const dtoInvalid = plainToInstance(CreateListingDraftDto, {
+        fireSafetyLabelConfirmed: 'invalid_string',
+      });
+      const errors = await validate(dtoInvalid);
+      expect(errors.length).toBeGreaterThan(0);
+      expect(errors[0].constraints?.isBoolean).toBe(
+        'fireSafetyLabelConfirmed must be a boolean value',
+      );
     });
   });
 });

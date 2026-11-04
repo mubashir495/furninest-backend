@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { IsBoolean, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreateListingDraftDto {
@@ -39,6 +39,12 @@ export class CreateListingDraftDto {
    * UK compliance confirmation: whether the physical fire safety label has been verified on upholstered items.
    */
   @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null || value === '') return undefined;
+    if (value === 'true' || value === true || value === 1 || value === '1') return true;
+    if (value === 'false' || value === false || value === 0 || value === '0') return false;
+    return value;
+  })
   @IsBoolean()
   fireSafetyLabelConfirmed?: boolean;
 
