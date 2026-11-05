@@ -15,7 +15,7 @@ describe('VariantsService Unit Tests', () => {
     const configService = {
       get: jest.fn((key: string) => {
         if (key === 'GEMINI_API_KEY') return 'test-key';
-        if (key === 'GEMINI_MODEL') return 'gemini-2.5-flash';
+        if (key === 'GEMINI_MODEL') return 'gemini-3.8-flash';
         return null;
       }),
     } as unknown as ConfigService;

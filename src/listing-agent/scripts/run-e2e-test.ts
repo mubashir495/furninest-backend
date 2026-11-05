@@ -33,7 +33,7 @@ async function runRealE2ETest() {
 
   const configService = new ConfigService({
     GEMINI_API_KEY: apiKey,
-    GEMINI_MODEL: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+    GEMINI_MODEL: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
   });
 
   const visionService = new VisionService(configService);

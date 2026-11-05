@@ -9,7 +9,7 @@ describe('VisionService & VisionAnalysisSchema', () => {
     configService = {
       get: jest.fn((key: string) => {
         if (key === 'GEMINI_API_KEY') return 'test-key';
-        if (key === 'GEMINI_MODEL') return 'gemini-2.5-flash';
+        if (key === 'GEMINI_MODEL') return 'gemini-3.8-flash';
         return undefined;
       }),
     } as any;
@@ -124,10 +124,10 @@ describe('VisionService & VisionAnalysisSchema', () => {
   });
 
   describe('getModelName', () => {
-    it('falls back to gemini-2.5-flash when env not set', () => {
+    it('falls back to gemini-3.8-flash when env not set', () => {
       const cs = { get: jest.fn().mockReturnValue(undefined) } as any;
       const s = new VisionService(cs);
-      expect((s as any).getModelName()).toBe('gemini-2.5-flash');
+      expect((s as any).getModelName()).toBe('gemini-3.8-flash');
     });
 
     it('uses GEMINI_MODEL from env when set', () => {
