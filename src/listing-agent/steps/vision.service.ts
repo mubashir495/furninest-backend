@@ -1,6 +1,6 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenAI } from '@google/genai';
 import { z } from 'zod';
 import {
   VISION_SYSTEM_PROMPT,
@@ -38,7 +38,7 @@ export interface VisionResult extends VisionAnalysis {
   raw: Record<string, any>;
 }
 
-// Max base64 bytes per image sent to Claude to avoid payload rejection (capped at ~1.5MB)
+// Max base64 bytes per image sent to Gemini to avoid payload rejection (capped at ~1.5MB)
 const MAX_IMAGE_BASE64_BYTES = 1_500_000;
 
 @Injectable()
@@ -47,18 +47,23 @@ export class VisionService {
 
   constructor(private readonly configService: ConfigService) {}
 
-  private getClient(): Anthropic {
-    const apiKey = this.configService.get<string>('ANTHROPIC_API_KEY');
+  private getClient(): GoogleGenAI {
+    const apiKey =
+      this.configService.get<string>('GEMINI_API_KEY') ||
+      this.configService.get<string>('GOOGLE_API_KEY') ||
+      process.env.GEMINI_API_KEY ||
+      process.env.GOOGLE_API_KEY;
     if (!apiKey) {
-      throw new Error('ANTHROPIC_API_KEY is not defined in environment variables.');
+      throw new Error('GEMINI_API_KEY is not defined in environment variables.');
     }
-    return new Anthropic({ apiKey });
+    return new GoogleGenAI({ apiKey });
   }
 
   private getModelName(): string {
     return (
-      this.configService.get<string>('ANTHROPIC_MODEL') ||
-      'claude-sonnet-5-5'
+      this.configService.get<string>('GEMINI_MODEL') ||
+      process.env.GEMINI_MODEL ||
+      'gemini-2.5-flash'
     );
   }
 
@@ -67,7 +72,7 @@ export class VisionService {
    */
   private async fetchImageAsInlineData(
     url: string,
-  ): Promise<{ mediaType: Anthropic.Base64ImageSource['media_type']; data: string } | null> {
+  ): Promise<{ mimeType: string; data: string } | null> {
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
       if (!response.ok) {
@@ -88,13 +93,10 @@ export class VisionService {
         else rawMime = 'image/jpeg';
       }
 
-      const mediaType = (
-        rawMime === 'image/jpg' ? 'image/jpeg' : rawMime
-      ) as Anthropic.Base64ImageSource['media_type'];
-
+      const mimeType = rawMime === 'image/jpg' ? 'image/jpeg' : rawMime;
       let data = buffer.toString('base64');
 
-      // If image exceeds Claude's safe buffer, trim to valid base64 boundary
+      // If image exceeds safe buffer, trim to valid base64 boundary
       if (data.length > MAX_IMAGE_BASE64_BYTES) {
         this.logger.warn(
           `Image ${url} base64 length ${data.length} exceeds limit. Trimming to ${MAX_IMAGE_BASE64_BYTES}.`,
@@ -103,7 +105,7 @@ export class VisionService {
         data = data.slice(0, trimTo);
       }
 
-      return { mediaType, data };
+      return { mimeType, data };
     } catch (err: any) {
       this.logger.warn(`Error downloading image ${url}: ${err?.message}`);
       return null;
@@ -111,7 +113,7 @@ export class VisionService {
   }
 
   /**
-   * Analyzes photos and/or raw text details using Claude Vision + Text.
+   * Analyzes photos and/or raw text details using Gemini Vision + Text.
    * Validates response with Zod and retries once on schema failure.
    */
   async analyze(imageUrls: string[] = [], rawDetails?: string): Promise<VisionResult> {
@@ -121,11 +123,11 @@ export class VisionService {
       );
     }
 
-    let imageParts: { mediaType: Anthropic.Base64ImageSource['media_type']; data: string }[] = [];
+    let imageParts: { mimeType: string; data: string }[] = [];
 
     if (imageUrls && imageUrls.length > 0) {
       this.logger.log(
-        `Fetching up to ${Math.min(imageUrls.length, 6)} images for Claude Vision analysis...`,
+        `Fetching up to ${Math.min(imageUrls.length, 6)} images for Gemini Vision analysis...`,
       );
       const fetched = await Promise.all(
         imageUrls.slice(0, 6).map((url) => this.fetchImageAsInlineData(url)),
@@ -139,72 +141,65 @@ export class VisionService {
 
     // Attempt 1
     try {
-      this.logger.log(`Calling Claude (${model}) for visual & attribute analysis...`);
-      const rawText = await this.callClaude(client, model, imageParts, userPrompt);
+      this.logger.log(`Calling Gemini (${model}) for visual & attribute analysis...`);
+      const rawText = await this.callGemini(client, model, imageParts, userPrompt);
       const parsed = this.parseAndValidate(rawText);
       return this.formatResult(parsed);
     } catch (firstErr: any) {
       this.logger.warn(
-        `Claude Vision attempt 1 failed (${firstErr?.message}). Retrying once with strict reminder...`,
+        `Gemini Vision attempt 1 failed (${firstErr?.message}). Retrying once with strict reminder...`,
       );
 
       // Attempt 2 (Retry)
       try {
         const retryPrompt = `${userPrompt}\n\nATTENTION: Your previous response was invalid. Return strictly valid JSON adhering to the exact schema. No markdown backticks.`;
-        const retryRaw = await this.callClaude(client, model, imageParts, retryPrompt);
+        const retryRaw = await this.callGemini(client, model, imageParts, retryPrompt);
         const parsed = this.parseAndValidate(retryRaw);
         return this.formatResult(parsed);
       } catch (retryErr: any) {
         this.logger.error(
-          `Claude Vision attempt 2 failed: ${retryErr?.message}`,
+          `Gemini Vision attempt 2 failed: ${retryErr?.message}`,
         );
         throw new Error(
-          `Claude analysis failed: ${retryErr?.message || retryErr}`,
+          `Gemini analysis failed: ${retryErr?.message || retryErr}`,
         );
       }
     }
   }
 
-  private async callClaude(
-    client: Anthropic,
+  private async callGemini(
+    client: GoogleGenAI,
     model: string,
-    imageParts: { mediaType: Anthropic.Base64ImageSource['media_type']; data: string }[],
+    imageParts: { mimeType: string; data: string }[],
     prompt: string,
   ): Promise<string> {
-    const contentBlocks: (Anthropic.TextBlockParam | Anthropic.ImageBlockParam)[] = [];
+    const contents: any[] = [];
 
     for (const part of imageParts) {
-      contentBlocks.push({
-        type: 'image',
-        source: {
-          type: 'base64',
-          media_type: part.mediaType,
+      contents.push({
+        inlineData: {
+          mimeType: part.mimeType,
           data: part.data,
         },
       });
     }
 
-    contentBlocks.push({
-      type: 'text',
+    contents.push({
       text: prompt,
     });
 
-    const message = await client.messages.create({
+    const response = await client.models.generateContent({
       model,
-      max_tokens: 1500,
-      system: VISION_SYSTEM_PROMPT,
-      messages: [
-        {
-          role: 'user',
-          content: contentBlocks,
-        },
-      ],
+      contents,
+      config: {
+        systemInstruction: VISION_SYSTEM_PROMPT,
+        responseMimeType: 'application/json',
+      },
     });
 
-    const textBlock = message.content.find((b) => b.type === 'text');
-    const text = textBlock && textBlock.type === 'text' ? textBlock.text : '';
+    const text = response.text || '';
     if (!text.trim()) {
-      throw new Error('Claude returned an empty response.');
+      throw new Error('Gemini returned an empty response.');
     }
     return text;
   }

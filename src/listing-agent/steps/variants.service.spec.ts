@@ -14,8 +14,8 @@ describe('VariantsService Unit Tests', () => {
   beforeEach(() => {
     const configService = {
       get: jest.fn((key: string) => {
-        if (key === 'ANTHROPIC_API_KEY') return 'test-key';
-        if (key === 'ANTHROPIC_MODEL') return 'claude-sonnet-5-5';
+        if (key === 'GEMINI_API_KEY') return 'test-key';
+        if (key === 'GEMINI_MODEL') return 'gemini-2.5-flash';
         return null;
       }),
     } as unknown as ConfigService;
@@ -84,8 +84,8 @@ describe('VariantsService Unit Tests', () => {
     const sampleImages = ['https://example.com/sofa-front.jpg', 'https://example.com/sofa-side.jpg'];
 
     it('assigns source photos ONLY to config matching detected seating (3-Seater) and needsPhoto: true to others', async () => {
-      // Mock callClaude to return 3 variants: 3-Seater, 2-Seater, and L-Shape
-      jest.spyOn<any, any>(service, 'callClaude').mockResolvedValue(
+      // Mock callGemini to return 3 variants: 3-Seater, 2-Seater, and L-Shape
+      jest.spyOn<any, any>(service, 'callGemini').mockResolvedValue(
         JSON.stringify([
           { configName: '3-Seater', colorName: 'Charcoal Grey' },
           { configName: '2-Seater', colorName: 'Cream' },
@@ -152,7 +152,7 @@ describe('VariantsService Unit Tests', () => {
 
       const tableImages = ['https://example.com/table.jpg'];
 
-      jest.spyOn<any, any>(service, 'callClaude').mockResolvedValue(
+      jest.spyOn<any, any>(service, 'callGemini').mockResolvedValue(
         JSON.stringify([
           { configName: 'Table Only (160cm)', colorName: 'Warm Brown' },
           { configName: 'Table + 6 Chairs Set', colorName: 'Warm Brown' },

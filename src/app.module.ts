@@ -73,6 +73,7 @@ import { ListingAgentModule } from './listing-agent/listing-agent.module';
               maxRetriesPerRequest: null,
               enableReadyCheck: false,
               lazyConnect: true,
+              connectTimeout: 5000,
             },
           };
         } catch {
@@ -83,6 +84,7 @@ import { ListingAgentModule } from './listing-agent/listing-agent.module';
               maxRetriesPerRequest: null,
               enableReadyCheck: false,
               lazyConnect: true,
+              connectTimeout: 5000,
             },
           };
         }

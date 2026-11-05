@@ -30,7 +30,7 @@ export class UploadService {
 
     const fileName = `${folder}/${randomUUID()}.${extension}`;
     const bucket =
-      this.configService.get<string>('SUPABASE_BUCKET');
+      this.configService.get<string>('SUPABASE_BUCKET') || 'products';
 
     const { error } = await this.supabaseService
       .getClient()
@@ -76,7 +76,7 @@ export class UploadService {
    */
   async deleteImage(imageUrl: string): Promise<void> {
     const bucket =
-      this.configService.get<string>('SUPABASE_BUCKET');
+      this.configService.get<string>('SUPABASE_BUCKET') || 'products';
 
     const fileName = imageUrl.split('/').slice(-2).join('/');
 

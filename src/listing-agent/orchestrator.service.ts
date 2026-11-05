@@ -105,21 +105,35 @@ export class OrchestratorService {
     await draft.save();
 
     // Enqueue BullMQ job with 3 attempts and exponential backoff
-    await this.listingQueue.add(
-      'process-draft',
-      { draftId: draft._id.toString() },
-      {
-        attempts: 3,
-        backoff: {
-          type: 'exponential',
-          delay: 2000,
+    // Fall back to in-process async processing if Redis is unavailable
+    try {
+      await this.listingQueue.add(
+        'process-draft',
+        { draftId: draft._id.toString() },
+        {
+          attempts: 3,
+          backoff: {
+            type: 'exponential',
+            delay: 2000,
+          },
+          removeOnComplete: 100,
+          removeOnFail: 50,
         },
-        removeOnComplete: 100,
-        removeOnFail: 50,
-      },
-    );
+      );
+      this.logger.log(`Enqueued listing-agent job for draftId: ${draft._id}`);
+    } catch (queueError: any) {
+      this.logger.warn(
+        `Redis / BullMQ unavailable (${queueError?.message || queueError}). Falling back to in-process async processing for draft: ${draft._id}`,
+      );
+      setImmediate(() => {
+        this.processDraft(draft._id.toString()).catch((procErr) => {
+          this.logger.error(
+            `In-process background processing failed for draft ${draft._id}: ${procErr?.message || procErr}`,
+          );
+        });
+      });
+    }
 
-    this.logger.log(`Enqueued listing-agent job for draftId: ${draft._id}`);
     return { draftId: draft._id.toString(), draft };
   }
 
@@ -138,7 +152,7 @@ export class OrchestratorService {
       throw new NotFoundException(`Draft ${draftId} not found.`);
     }
 
-    this.logger.log(`Draft ${draftId}: Starting Claude AI listing pipeline for UK market...`);
+    this.logger.log(`Draft ${draftId}: Starting Gemini AI listing pipeline for UK market...`);
     draft.status = ListingDraftStatus.ANALYZING;
     draft.error = null;
     await draft.save();
@@ -158,8 +172,8 @@ export class OrchestratorService {
     const pipelinePromise = (async () => {
       const rawDetails = draft.rawDetails || undefined;
 
-      // Step 1: Claude Vision & Text Attribute Extraction (British English)
-      this.logger.log(`Draft ${draftId}: [Step 1/3] Running Claude Vision & Attribute analysis...`);
+      // Step 1: Gemini Vision & Text Attribute Extraction (British English)
+      this.logger.log(`Draft ${draftId}: [Step 1/3] Running Gemini Vision & Attribute analysis...`);
       const visionResult = await this.visionService.analyze(
         draft.sourceImages || [],
         rawDetails,
@@ -519,19 +533,31 @@ export class OrchestratorService {
     draft.error = null;
     await draft.save();
 
-    await this.listingQueue.add(
-      'process-draft',
-      { draftId: draft._id.toString() },
-      {
-        attempts: 3,
-        backoff: {
-          type: 'exponential',
-          delay: 2000,
+    try {
+      await this.listingQueue.add(
+        'process-draft',
+        { draftId: draft._id.toString() },
+        {
+          attempts: 3,
+          backoff: {
+            type: 'exponential',
+            delay: 2000,
+          },
         },
-      },
-    );
-
-    this.logger.log(`Retried draft ${id} and enqueued new job.`);
+      );
+      this.logger.log(`Retried draft ${id} and enqueued new job.`);
+    } catch (queueError: any) {
+      this.logger.warn(
+        `Redis / BullMQ unavailable on retry (${queueError?.message || queueError}). Running in-process.`,
+      );
+      setImmediate(() => {
+        this.processDraft(draft._id.toString()).catch((procErr) => {
+          this.logger.error(
+            `In-process background retry failed for draft ${draft._id}: ${procErr?.message || procErr}`,
+          );
+        });
+      });
+    }
     return draft;
   }
 

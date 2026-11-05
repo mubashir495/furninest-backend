@@ -1,6 +1,6 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenAI } from '@google/genai';
 import { z } from 'zod';
 import { randomBytes } from 'crypto';
 
@@ -73,18 +73,23 @@ export class VariantsService {
     this.pricingService = pricingService || new PricingService(configService);
   }
 
-  private getClient(): Anthropic {
-    const apiKey = this.configService.get<string>('ANTHROPIC_API_KEY');
+  private getClient(): GoogleGenAI {
+    const apiKey =
+      this.configService.get<string>('GEMINI_API_KEY') ||
+      this.configService.get<string>('GOOGLE_API_KEY') ||
+      process.env.GEMINI_API_KEY ||
+      process.env.GOOGLE_API_KEY;
     if (!apiKey) {
-      throw new Error('ANTHROPIC_API_KEY is not defined in environment variables.');
+      throw new Error('GEMINI_API_KEY is not defined in environment variables.');
     }
-    return new Anthropic({ apiKey });
+    return new GoogleGenAI({ apiKey });
   }
 
   private getModelName(): string {
     return (
-      this.configService.get<string>('ANTHROPIC_MODEL') ||
-      'claude-sonnet-5-5'
+      this.configService.get<string>('GEMINI_MODEL') ||
+      process.env.GEMINI_MODEL ||
+      'gemini-2.5-flash'
     );
   }
 
@@ -121,21 +126,21 @@ export class VariantsService {
     let selections: VariantSelection;
 
     try {
-      this.logger.log(`Calling Claude (${model}) for variants selection...`);
-      const raw = await this.callClaude(client, model, prompt);
+      this.logger.log(`Calling Gemini (${model}) for variants selection...`);
+      const raw = await this.callGemini(client, model, prompt);
       selections = this.parseAndValidate(raw);
     } catch (firstErr: any) {
       this.logger.warn(
-        `Claude Variants attempt 1 failed (${firstErr?.message}). Retrying once with strict instructions...`,
+        `Gemini Variants attempt 1 failed (${firstErr?.message}). Retrying once with strict instructions...`,
       );
 
       try {
         const retryPrompt = `${prompt}\n\nATTENTION: Return strictly valid JSON array. No markdown code blocks.`;
-        const retryRaw = await this.callClaude(client, model, retryPrompt);
+        const retryRaw = await this.callGemini(client, model, retryPrompt);
         selections = this.parseAndValidate(retryRaw);
       } catch (retryErr: any) {
         this.logger.warn(
-          `Claude Variants attempt 2 failed (${retryErr?.message}). Falling back to deterministic selections.`,
+          `Gemini Variants attempt 2 failed (${retryErr?.message}). Falling back to deterministic selections.`,
         );
         selections = this.buildFallbackSelections(
           analysis,
@@ -179,22 +184,23 @@ export class VariantsService {
     });
   }
 
-  private async callClaude(
-    client: Anthropic,
+  private async callGemini(
+    client: GoogleGenAI,
     model: string,
     prompt: string,
   ): Promise<string> {
-    const message = await client.messages.create({
+    const response = await client.models.generateContent({
       model,
-      max_tokens: 512,
-      system: VARIANTS_SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: prompt }],
+      contents: [{ text: prompt }],
+      config: {
+        systemInstruction: VARIANTS_SYSTEM_PROMPT,
+        responseMimeType: 'application/json',
+      },
     });
 
-    const textBlock = message.content.find((b) => b.type === 'text');
-    const text = textBlock && textBlock.type === 'text' ? textBlock.text : '';
+    const text = response.text || '';
     if (!text.trim()) {
-      throw new Error('Claude returned empty text for Variants generation.');
+      throw new Error('Gemini returned empty text for Variants generation.');
     }
     return text;
   }
@@ -218,70 +224,93 @@ export class VariantsService {
     const matchingConfig =
       allowedConfigs.find((c) => isConfigMatchingSeating(c, analysis.seating)) ||
       allowedConfigs[0];
+
     const matchingColor =
-      this.findClosestColorName(analysis.color, allowedColorNames) ||
-      allowedColorNames[0];
-    return [{ configName: matchingConfig, colorName: matchingColor }];
+      allowedColorNames.find(
+        (c) =>
+          c.toLowerCase() === (analysis.color || '').toLowerCase() ||
+          (analysis.color || '').toLowerCase().includes(c.toLowerCase()),
+      ) || allowedColorNames[0];
+
+    const altColor =
+      allowedColorNames.find((c) => c !== matchingColor) || matchingColor;
+
+    return [
+      { configName: matchingConfig, colorName: matchingColor },
+      { configName: matchingConfig, colorName: altColor },
+    ];
   }
 
-  private sanitizeConfig(input: string, allowedConfigs: string[]): string {
-    const clean = (input || '').trim();
-    const exact = allowedConfigs.find((c) => c === clean);
+  private sanitizeConfig(config: string, allowedConfigs: string[]): string {
+    const exact = allowedConfigs.find(
+      (c) => c.toLowerCase() === (config || '').toLowerCase(),
+    );
     if (exact) return exact;
+
     const partial = allowedConfigs.find(
       (c) =>
-        clean.toLowerCase().includes(c.toLowerCase()) ||
-        c.toLowerCase().includes(clean.toLowerCase()),
+        c.toLowerCase().includes((config || '').toLowerCase()) ||
+        (config || '').toLowerCase().includes(c.toLowerCase()),
     );
-    return partial || allowedConfigs[0];
+    if (partial) return partial;
+
+    return allowedConfigs[0];
   }
 
-  private sanitizeColor(input: string, allowedColorNames: string[]): string {
-    const colorObj = this.findColorObject(input);
-    return colorObj?.name || allowedColorNames[0];
-  }
-
-  private findClosestColorName(
-    colorInput: string,
-    allowedColorNames: string[],
-  ): string | undefined {
-    const colorObj = this.findColorObject(colorInput);
-    return colorObj?.name;
-  }
-
-  private findColorObject(
-    colorInput: string,
-  ): (typeof ALLOWED_COLORS)[number] | undefined {
-    const clean = (colorInput || '').toLowerCase().trim();
-    const exact = ALLOWED_COLORS.find((c) => c.name.toLowerCase() === clean);
+  private sanitizeColor(color: string, allowedColors: string[]): string {
+    const exact = allowedColors.find(
+      (c) => c.toLowerCase() === (color || '').toLowerCase(),
+    );
     if (exact) return exact;
-    const partial = ALLOWED_COLORS.find(
+
+    const partial = allowedColors.find(
       (c) =>
-        clean.includes(c.name.toLowerCase()) ||
-        c.name.toLowerCase().includes(clean),
+        c.toLowerCase().includes((color || '').toLowerCase()) ||
+        (color || '').toLowerCase().includes(c.toLowerCase()),
     );
-    return partial || ALLOWED_COLORS[0];
+    if (partial) return partial;
+
+    return allowedColors[0];
   }
 
-  private sanitizeMaterial(materialInput: string): string {
-    const clean = (materialInput || '').toLowerCase().trim();
-    const matched = ALLOWED_MATERIALS.find(
-      (m) =>
-        clean.includes(m.toLowerCase()) || m.toLowerCase().includes(clean),
+  private sanitizeMaterial(material: string): string {
+    const exact = ALLOWED_MATERIALS.find(
+      (m) => m.toLowerCase() === (material || '').toLowerCase(),
     );
-    return matched || 'Luxury Velvet';
+    if (exact) return exact;
+
+    const partial = ALLOWED_MATERIALS.find(
+      (m) =>
+        m.toLowerCase().includes((material || '').toLowerCase()) ||
+        (material || '').toLowerCase().includes(m.toLowerCase()),
+    );
+    if (partial) return partial;
+
+    return ALLOWED_MATERIALS[0];
   }
 
   private generateSku(
     category: string,
     config: string,
     color: string,
-    index: number,
+    idx: number,
   ): string {
-    const catCode = (category || 'FUR').replace(/[^a-zA-Z]/g, '').slice(0, 3).toUpperCase();
-    const cfgCode = (config || 'STD').replace(/[^a-zA-Z0-9]/g, '').slice(0, 3).toUpperCase();
-    const colCode = (color || 'CLR').replace(/[^a-zA-Z]/g, '').slice(0, 3).toUpperCase();
+    const catCode = (category || 'LUX')
+      .replace(/[^A-Za-z]/g, '')
+      .slice(0, 3)
+      .toUpperCase();
+
+    const configCode = (config || 'STD')
+      .replace(/[^A-Za-z0-9]/g, '')
+      .slice(0, 3)
+      .toUpperCase();
+
+    const colorCode = (color || 'CLR')
+      .replace(/[^A-Za-z]/g, '')
+      .slice(0, 3)
+      .toUpperCase();
+
     const rand = randomBytes(2).toString('hex').toUpperCase();
-    return `LX-${catCode}-${cfgCode}-${colCode}-${rand}`;
+    return `${catCode}-${configCode}-${colorCode}-${idx + 1}-${rand}`;
   }
 }

@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenAI } from '@google/genai';
 import { z } from 'zod';
 import { randomBytes } from 'crypto';
 
@@ -154,18 +154,23 @@ export class SeoService {
     private readonly productModel: Model<ProductDocument>,
   ) {}
 
-  private getClient(): Anthropic {
-    const apiKey = this.configService.get<string>('ANTHROPIC_API_KEY');
+  private getClient(): GoogleGenAI {
+    const apiKey =
+      this.configService.get<string>('GEMINI_API_KEY') ||
+      this.configService.get<string>('GOOGLE_API_KEY') ||
+      process.env.GEMINI_API_KEY ||
+      process.env.GOOGLE_API_KEY;
     if (!apiKey) {
-      throw new Error('ANTHROPIC_API_KEY is not defined in environment variables.');
+      throw new Error('GEMINI_API_KEY is not defined in environment variables.');
     }
-    return new Anthropic({ apiKey });
+    return new GoogleGenAI({ apiKey });
   }
 
   private getModelName(): string {
     return (
-      this.configService.get<string>('ANTHROPIC_MODEL') ||
-      'claude-sonnet-5-5'
+      this.configService.get<string>('GEMINI_MODEL') ||
+      process.env.GEMINI_MODEL ||
+      'gemini-2.5-flash'
     );
   }
 
@@ -200,22 +205,22 @@ export class SeoService {
 
     // Attempt 1
     try {
-      this.logger.log(`Calling Claude (${model}) for British English SEO generation...`);
-      const response = await this.callClaude(client, model, basePrompt);
+      this.logger.log(`Calling Gemini (${model}) for British English SEO generation...`);
+      const response = await this.callGemini(client, model, basePrompt);
       rawOutput = this.parseAndValidate(response);
     } catch (firstErr: any) {
       this.logger.warn(
-        `Claude SEO attempt 1 failed (${firstErr?.message}). Retrying once...`,
+        `Gemini SEO attempt 1 failed (${firstErr?.message}). Retrying once...`,
       );
 
       // Attempt 2 (Retry)
       try {
         const retryPrompt = `${basePrompt}\n\nATTENTION: Return strictly valid JSON adhering to the exact schema. Output must be British English. No markdown.`;
-        const retryResponse = await this.callClaude(client, model, retryPrompt);
+        const retryResponse = await this.callGemini(client, model, retryPrompt);
         rawOutput = this.parseAndValidate(retryResponse);
       } catch (retryErr: any) {
-        this.logger.error(`Claude SEO attempt 2 failed: ${retryErr?.message}`);
-        throw new Error(`Claude SEO generation failed: ${retryErr?.message || retryErr}`);
+        this.logger.error(`Gemini SEO attempt 2 failed: ${retryErr?.message}`);
+        throw new Error(`Gemini SEO generation failed: ${retryErr?.message || retryErr}`);
       }
     }
 
@@ -256,22 +261,23 @@ export class SeoService {
     };
   }
 
-  private async callClaude(
-    client: Anthropic,
+  private async callGemini(
+    client: GoogleGenAI,
     model: string,
     prompt: string,
   ): Promise<string> {
-    const message = await client.messages.create({
+    const response = await client.models.generateContent({
       model,
-      max_tokens: 2048,
-      system: SEO_SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: prompt }],
+      contents: [{ text: prompt }],
+      config: {
+        systemInstruction: SEO_SYSTEM_PROMPT,
+        responseMimeType: 'application/json',
+      },
     });
 
-    const textBlock = message.content.find((b) => b.type === 'text');
-    const text = textBlock && textBlock.type === 'text' ? textBlock.text : '';
+    const text = response.text || '';
     if (!text.trim()) {
-      throw new Error('Claude returned empty text for SEO generation.');
+      throw new Error('Gemini returned empty text for SEO generation.');
     }
     return text;
   }

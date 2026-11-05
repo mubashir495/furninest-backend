@@ -8,8 +8,8 @@ describe('VisionService & VisionAnalysisSchema', () => {
   beforeEach(() => {
     configService = {
       get: jest.fn((key: string) => {
-        if (key === 'ANTHROPIC_API_KEY') return 'test-key';
-        if (key === 'ANTHROPIC_MODEL') return 'claude-sonnet-5-5';
+        if (key === 'GEMINI_API_KEY') return 'test-key';
+        if (key === 'GEMINI_MODEL') return 'gemini-2.5-flash';
         return undefined;
       }),
     } as any;
@@ -124,16 +124,16 @@ describe('VisionService & VisionAnalysisSchema', () => {
   });
 
   describe('getModelName', () => {
-    it('falls back to claude-sonnet-5-5 when env not set', () => {
+    it('falls back to gemini-2.5-flash when env not set', () => {
       const cs = { get: jest.fn().mockReturnValue(undefined) } as any;
       const s = new VisionService(cs);
-      expect((s as any).getModelName()).toBe('claude-sonnet-5-5');
+      expect((s as any).getModelName()).toBe('gemini-2.5-flash');
     });
 
-    it('uses ANTHROPIC_MODEL from env when set', () => {
-      const cs = { get: jest.fn().mockReturnValue('claude-3-7-sonnet-20250219') } as any;
+    it('uses GEMINI_MODEL from env when set', () => {
+      const cs = { get: jest.fn().mockReturnValue('gemini-2.0-pro') } as any;
       const s = new VisionService(cs);
-      expect((s as any).getModelName()).toBe('claude-3-7-sonnet-20250219');
+      expect((s as any).getModelName()).toBe('gemini-2.0-pro');
     });
   });
 });
