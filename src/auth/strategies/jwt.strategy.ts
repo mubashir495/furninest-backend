@@ -21,14 +21,31 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         // 1. Standard Authorization: Bearer <token>
         ExtractJwt.fromAuthHeaderAsBearerToken(),
 
-        // 2. Custom header x-access-token (never stripped by Apache / Hostinger proxies)
-        ExtractJwt.fromHeader('x-access-token'),
-
-        // 3. Fallback for Apache mod_rewrite HTTP_AUTHORIZATION or cookie
+        // 2. Cookie extraction (access_token or furninest_token)
         (req: Request) => {
           if (!req) return null;
+          // From parsed cookies (cookie-parser)
+          if (req.cookies?.access_token) return req.cookies.access_token;
+          if (req.cookies?.furninest_token) return req.cookies.furninest_token;
 
-          // Apache / LiteSpeed rewritten header
+          // Raw cookie string fallback
+          if (req.headers?.cookie) {
+            const matchAccessToken = req.headers.cookie.match(/(?:^|;\s*)access_token=([^;]+)/);
+            if (matchAccessToken) return decodeURIComponent(matchAccessToken[1]);
+
+            const matchFurninestToken = req.headers.cookie.match(/(?:^|;\s*)furninest_token=([^;]+)/);
+            if (matchFurninestToken) return decodeURIComponent(matchFurninestToken[1]);
+          }
+
+          return null;
+        },
+
+        // 3. Custom header x-access-token (never stripped by Apache / LiteSpeed proxies)
+        ExtractJwt.fromHeader('x-access-token'),
+
+        // 4. Apache mod_rewrite HTTP_AUTHORIZATION header
+        (req: Request) => {
+          if (!req) return null;
           const apacheAuth =
             req.headers?.['http_authorization'] ||
             req.headers?.['http-authorization'];
@@ -39,15 +56,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
             }
             return clean;
           }
-
-          // Cookie fallback if present
-          if (req.headers?.cookie) {
-            const match = req.headers.cookie.match(/(?:^|;\s*)furninest_token=([^;]+)/);
-            if (match) {
-              return decodeURIComponent(match[1]);
-            }
-          }
-
           return null;
         },
       ]),
@@ -59,6 +67,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   async validate(payload: any) {
     return {
       id: payload.sub,
+      userId: payload.sub,
       email: payload.email,
       role: (payload.role || '').toUpperCase(),
     };

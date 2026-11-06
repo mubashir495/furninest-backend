@@ -1,6 +1,7 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import * as express from 'express';
+import cookieParser from 'cookie-parser';
 
 const REQUIRED_ENV = [
   'MONGODB_URI',
@@ -39,6 +40,7 @@ export function getAllowedOrigins(): string[] {
     'https://luxafurniture.vercel.app',
     'https://furninest.vercel.app',
     'https://furninest-pi.vercel.app',
+    'https://plum-gerbil-231797.hostingersite.com',
     // Local development
     'http://localhost:3000',
     'http://localhost:3001',
@@ -67,6 +69,7 @@ export function isOriginAllowed(origin: string | undefined): boolean {
 
   // Allow all Vercel deployments (*.vercel.app), including preview URLs,
   // branch deployments (e.g. furninest-*-mubashiryaseen780-gmailcoms-projects.vercel.app)
+  // and Hostinger deployments
   try {
     const url = new URL(cleanOrigin);
     if (url.hostname.endsWith('.vercel.app') || url.hostname.endsWith('.hostingersite.com')) {
@@ -82,6 +85,7 @@ export function isOriginAllowed(origin: string | undefined): boolean {
 /** Shared by src/main.ts and api/index.ts so both entry points stay identical. */
 export function configureApp(app: INestApplication) {
   app.use(helmet());
+  app.use(cookieParser());
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
@@ -96,7 +100,8 @@ export function configureApp(app: INestApplication) {
     },
     credentials: true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    allowedHeaders: 'Content-Type, Accept, Authorization, X-Requested-With, x-access-token, X-Access-Token',
+    allowedHeaders:
+      'Content-Type, Accept, Authorization, X-Requested-With, x-access-token, X-Access-Token',
   });
 
   app.useGlobalPipes(

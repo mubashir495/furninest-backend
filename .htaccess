@@ -1,9 +1,7 @@
 # Pass Authorization header to Node.js on Apache / LiteSpeed (Hostinger)
-<IfModule mod_rewrite.c>
-  RewriteEngine On
-  RewriteCond %{HTTP:Authorization} .
-  RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
-</IfModule>
+RewriteEngine On
+RewriteCond %{HTTP:Authorization} ^(.*)
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%1]
 
 <IfModule mod_setenvif.c>
   SetEnvIfNoCase ^Authorization$ "(.+)" HTTP_AUTHORIZATION=$1
