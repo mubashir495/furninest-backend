@@ -12,6 +12,9 @@ const REQUIRED_ENV = [
 ];
 
 export function assertEnv() {
+  if (!process.env.JWT_ACCESS_SECRET && process.env.JWT_SECRET) {
+    process.env.JWT_ACCESS_SECRET = process.env.JWT_SECRET;
+  }
   const missing = REQUIRED_ENV.filter((k) => !process.env[k]);
   if (missing.length) {
     // Names only - never print values
@@ -66,7 +69,7 @@ export function isOriginAllowed(origin: string | undefined): boolean {
   // branch deployments (e.g. furninest-*-mubashiryaseen780-gmailcoms-projects.vercel.app)
   try {
     const url = new URL(cleanOrigin);
-    if (url.hostname.endsWith('.vercel.app')) {
+    if (url.hostname.endsWith('.vercel.app') || url.hostname.endsWith('.hostingersite.com')) {
       return true;
     }
   } catch {
@@ -93,7 +96,7 @@ export function configureApp(app: INestApplication) {
     },
     credentials: true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    allowedHeaders: 'Content-Type, Accept, Authorization, X-Requested-With',
+    allowedHeaders: 'Content-Type, Accept, Authorization, X-Requested-With, x-access-token, X-Access-Token',
   });
 
   app.useGlobalPipes(

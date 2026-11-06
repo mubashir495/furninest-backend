@@ -36,17 +36,32 @@ export class AuthService {
     private readonly mailService: MailService,
   ) {}
 
+  private getAccessSecret(): string {
+    return (
+      process.env.JWT_ACCESS_SECRET ||
+      process.env.JWT_SECRET ||
+      'furninest_jwt_access_fallback_secret_key_2026'
+    );
+  }
+
+  private getRefreshSecret(): string {
+    return (
+      process.env.JWT_REFRESH_SECRET ||
+      'furninest_jwt_refresh_fallback_secret_key_2026'
+    );
+  }
+
   private async issueTokens(user: UserDocument) {
-    const payload = { sub: user._id, email: user.email, role: user.role };
+    const payload = { sub: user._id, email: user.email, role: (user.role || '').toUpperCase() };
 
     const accessToken = await this.jwtService.signAsync(payload, {
-      secret: process.env.JWT_ACCESS_SECRET,
-      expiresIn: (process.env.JWT_ACCESS_EXPIRES_IN ?? '15m') as any,
+      secret: this.getAccessSecret(),
+      expiresIn: (process.env.JWT_ACCESS_EXPIRES_IN ?? '7d') as any,
     });
 
     const refreshToken = await this.jwtService.signAsync(payload, {
-      secret: process.env.JWT_REFRESH_SECRET,
-      expiresIn: (process.env.JWT_REFRESH_EXPIRES_IN ?? '7d') as any,
+      secret: this.getRefreshSecret(),
+      expiresIn: (process.env.JWT_REFRESH_EXPIRES_IN ?? '30d') as any,
     });
 
     user.refreshToken = await bcrypt.hash(refreshToken, 12);
@@ -235,7 +250,7 @@ export class AuthService {
     let payload: { sub: string; email: string };
     try {
       payload = await this.jwtService.verifyAsync(dto.refreshToken, {
-        secret: process.env.JWT_REFRESH_SECRET,
+        secret: this.getRefreshSecret(),
       });
     } catch {
       throw new UnauthorizedException('Invalid or expired refresh token.');
